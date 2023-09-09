@@ -186,4 +186,4 @@ Please stay tuned for the release of this next version, as it promises to delive
 
 # License
 
-PanOS Master Tshooter is distributed under the following license agreement.
+PanOS Master Tshooter is distributed under the MIT license.
