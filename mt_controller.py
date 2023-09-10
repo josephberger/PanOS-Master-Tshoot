@@ -101,6 +101,7 @@ class MTController:
 
         # for each device, add to the database
         for d in devices:
+
             ngfw_info = {
                 'hostname': d['hostname'],
                 'serial_number': d['serial'],
@@ -119,6 +120,10 @@ class MTController:
                 ngfw_info['alt_serial'] = None
             
             new_ngfw = Ngfw(**ngfw_info)
+
+            # If connected is not yes continue
+            if d['connected'] != 'yes':
+                continue
 
             # If serial number is not in serial_numbers, add to the database
             if new_ngfw.serial_number not in serial_numbers:
