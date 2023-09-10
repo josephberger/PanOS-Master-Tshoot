@@ -85,10 +85,10 @@ class MTController:
         devices = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['devices']['entry']
 
         message = []
-
+        
+        # Query the database for ngfws and add serial numbers to serial_numbers list
         serial_numbers = []
 
-        # Query the database for ngfws and add serial numbers to serial_numbers list
         ngfws = self.session.query(Ngfw).all()
         for n in ngfws:
             serial_numbers.append(n.serial_number)
@@ -102,18 +102,31 @@ class MTController:
         # for each device, add to the database
         for d in devices:
 
+            # If serial number is not in serial_numbers, add to the database
+            if d['serial'] in serial_numbers:
+                message.append(f"* {d['hostname']} {d['serial']} already in database.  Skipping...")
+                continue
+            
+            # If connected is not yes continue
+            if d['connected'] != 'yes':
+                print(f"* {d['hostname']} {d['serial']} not connected.  Skipping...")
+                continue
+            
             ngfw_info = {
                 'hostname': d['hostname'],
                 'serial_number': d['serial'],
                 'ip_address': d['ip-address'],
                 'panorama_id': self.panorama.id
-            } 
-            # If ha in d
+            }
+
+            # Determine HA status
             if 'ha' in d:
+                # If ha state is active, set active to true and alt_serial to peer serial number
                 if d['ha']['state'] == 'active':
                     ngfw_info['active'] = True
                     ngfw_info['alt_serial'] = d['ha']['peer']['serial'] 
                 else:
+                    print(f"* {ngfw_info['hostname']} {ngfw_info['serial_number']} is not active.  Skipping...")
                     continue
             else:
                 ngfw_info['active'] = True
@@ -121,18 +134,12 @@ class MTController:
             
             new_ngfw = Ngfw(**ngfw_info)
 
-            # If connected is not yes continue
-            if d['connected'] != 'yes':
-                continue
+            self.session.add(new_ngfw)
 
-            # If serial number is not in serial_numbers, add to the database
-            if new_ngfw.serial_number not in serial_numbers:
-                self.session.add(new_ngfw)
-                message.append(f"{ngfw_info['hostname']} {new_ngfw.serial_number} added to database")
-            else:
-                message.append(f"{ngfw_info['hostname']} {new_ngfw.serial_number} already in database.  Skipping...")
+            message.append(f"+ {ngfw_info['hostname']} {new_ngfw.serial_number} added to database") 
             
         self.session.commit()
+        
         return message
 
 
