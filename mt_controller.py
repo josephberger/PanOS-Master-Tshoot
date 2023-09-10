@@ -109,7 +109,7 @@ class MTController:
             
             # If connected is not yes continue
             if d['connected'] != 'yes':
-                print(f"* {d['hostname']} {d['serial']} not connected.  Skipping...")
+                message.append(f"* {d['hostname']} {d['serial']} not connected.  Skipping...")
                 continue
             
             ngfw_info = {
@@ -126,7 +126,7 @@ class MTController:
                     ngfw_info['active'] = True
                     ngfw_info['alt_serial'] = d['ha']['peer']['serial'] 
                 else:
-                    print(f"* {ngfw_info['hostname']} {ngfw_info['serial_number']} is not active.  Skipping...")
+                    message.append(f"* {ngfw_info['hostname']} {ngfw_info['serial_number']} is not active.  Skipping...")
                     continue
             else:
                 ngfw_info['active'] = True
@@ -139,7 +139,7 @@ class MTController:
             message.append(f"+ {ngfw_info['hostname']} {new_ngfw.serial_number} added to database") 
             
         self.session.commit()
-        
+
         return message
 
 
@@ -492,7 +492,7 @@ class MTController:
             
         formatted_interfaces = []
 
-        # Print each interface in a formatted way and append to the formatted_interfaces list
+        # Format each interface dictionary and append
         for i in interfaces:
             interface_dict = {
                 'ngfw': i.virtual_router.ngfw.hostname,
