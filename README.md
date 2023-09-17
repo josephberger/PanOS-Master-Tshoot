@@ -5,29 +5,34 @@ PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information f
 ## Version Changes
 
 **Multi Panorama Support**
-Now supports more than one Panorama (or HA pair).  Adding a Panorama using `mt-tools` is now done with the `-p` or `--p` flags.
+- Now supports more than one Panorama (or HA pair).  
+- Adding a Panorama using `mt-tools` is now done with the `-p` or `--p` flags.
 
 **Stand Alone Firewall Support**
-Firewalls (and HA pairs) now supported with the `mt-tools`, add one with the `-n` or `--ngfw` flags.
+- Firewalls (and HA pairs) now supported with the `mt-tools`, add one with the `-n` or `--ngfw` flags.
 
 **Refresh Changes**
-Refresh is now performed by `-r` or `--refresh` and accepts only an `--ngfw` which refreshes everything about an NGFW.  This was done since the API commands are not vsys or vr specific.  Note that NOT using the `--ngfw` filter will result in refreshing all NGFWs (Panorama connected or stand alone)
+- Refresh is now performed by `-r` or `--refresh` and accepts only an `--ngfw` which refreshes everything about an NGFW.  This was done since the API commands are not vsys or vr specific.  
+- Note that NOT using the `--ngfw` filter will result in refreshing all NGFWs (Panorama connected or stand alone)
 
 **Only Show Commands**
-The `print` command via `-p` or `--print` is no longer available.  `-s` or `--show` now performs the same functionality but with the optional `--on-demand` flag, the information is pulled directly from the device vs the database.  (see supported "On Deman" commands)
+- The `print` command via `-p` or `--print` is no longer available.  
+- `-s` or `--show` now performs the same functionality but with the optional `--on-demand` flag, the information is pulled directly from the device vs the database.  (see supported "On Demand" commands)
 
 **Fib Calculation**
-Fib lookup is now done through a calculation based on routes and interfaces.  `--on-deman` can be used in conjunction to bypass the calculation and use the API instead.  API functionality can be especially helpful in environments with policy based forwarding.
+- Fib lookup is now done through a calculation based on routes and interfaces.  
+- `--on-deman` can be used in conjunction to bypass the calculation and use the API instead.  API functionality can be especially helpful in environments with policy based forwarding.
 
 **Supported On Demand Commands**
-Some commands now feature 'on-deman' which executes an API command for real time stats
-- fib-lookup
-- show
-  - bgp-peers
-  - interfaces
-  - lldp
+- Some commands now feature 'on-deman' which executes an API command for real time stats:
+  - fib-lookup
+  - show
+    - bgp-peers
+    - interfaces
+    - lldp
 
-Showing Panorama and NGFW will never be included since they are semi-static entries.  Routes and VRs MAY be included in the future but not likley (use `--refresh` to get new items).
+- Showing Panorama and NGFW will never be included since they are semi-static entries.  
+- Routes and VRs MAY be included in the future but not likley (use `--refresh` to get new items).
 
 ## Introduction
 

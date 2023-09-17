@@ -109,7 +109,8 @@ class MTController:
             try:
                 self.xapi.op("<show><devices><all></all></devices></show>")
             except pan.xapi.PanXapiError as e:
-                raise MTControllerException(f"Issue connecting to {panorama.hostname}. {e}")
+                message.append(f"! {panorama.hostname} {e}")
+                continue
             
             devices = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['devices']
 

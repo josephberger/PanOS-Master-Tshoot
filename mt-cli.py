@@ -359,19 +359,19 @@ if __name__ == '__main__':
     parser.add_argument("--dst", type=str, default=None, help="Destination filter for routes")
     parser.add_argument("--flag", type=str, default=None, help="Comma separated flags for routes")
     parser.add_argument("--on-demand", action="store_true", help="On demand API call vs querying the database.")
-    parser.add_argument("--logging", action="store_true", help="Trun logging to the terminal on")
     
     args = parser.parse_args()
 
     try:
-        # If refresh-ngfws is selected, refresh the ngfws
-        if args.refresh:
-            refresh_ngfws(ngfw=args.ngfw)
-
+        
         # If import is selected, import the panorama ngfws
         if args.import_ngfws:
             messages = mt.import_panorama_devices()
             print("\n".join(messages))
+
+        # If refresh-ngfws is selected, refresh the ngfws
+        if args.refresh:
+            refresh_ngfws(ngfw=args.ngfw)
 
         # If ha-status is selected, update the ha status
         if args.ha_status:
