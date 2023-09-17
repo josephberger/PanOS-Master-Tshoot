@@ -1,1 +1,1 @@
-from .db import Ngfw, VirtualRouter, Route, Base, Interface, Panorama
+from .db import Ngfw, VirtualRouter, Route, Base, Interface, Panorama, Neighbor, BGPPeer

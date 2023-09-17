@@ -47,8 +47,10 @@ class Ngfw(Base):
     hostname = Column(String)
     serial_number = Column(String)
     ip_address = Column(String)
-    alt_serial = Column(String)
+    alt_serial = Column(String, default=None)
     active = Column(Boolean, default=True)
+    alt_ip = Column(String, default=None)
+    api_key = Column(Text, default=None)
 
     # ForeignKey to associate with Panorama
     panorama_id = Column(Integer, ForeignKey('panorama.id'))
@@ -57,6 +59,7 @@ class Ngfw(Base):
     panorama = relationship('Panorama', back_populates='ngfws')
     virtual_routers = relationship('VirtualRouter', back_populates='ngfw')
     neighbors = relationship('Neighbor', back_populates='ngfw')
+    bgp_peers = relationship('BGPPeer', back_populates='ngfw')
 
 
 class VirtualRouter(Base):
@@ -71,7 +74,8 @@ class VirtualRouter(Base):
     # Establish the many-to-one relationship with Ngfw, and the one-to-many relationship with Routes, Interfaces
     ngfw = relationship('Ngfw', back_populates='virtual_routers')
     interfaces = relationship('Interface', back_populates='virtual_router')
-    routes = relationship('Route', back_populates='virtual_router') 
+    routes = relationship('Route', back_populates='virtual_router')
+    bgp_peers = relationship('BGPPeer', back_populates='virtual_router')
 
 
 class Route(Base):
@@ -120,10 +124,28 @@ class Neighbor(Base):
     remote_hostname = Column(String)
 
     # ForeignKey to associate with Ngfw
-    ngfw_id = Column(Integer, ForeignKey('ngfw.id'))  # Foreign key to Ngfw
+    ngfw_id = Column(Integer, ForeignKey('ngfw.id')) 
 
     # Establish the many-to-one relationship with Ngfw
     ngfw = relationship('Ngfw', back_populates='neighbors')
 
+class BGPPeer(Base):
+    __tablename__ = 'bgp_peers'
 
+    id = Column(Integer, primary_key=True)
+    peer_name = Column(String)
+    peer_group = Column(String)
+    peer_router_id = Column(String)
+    remote_as = Column(String)
+    status = Column(String)
+    status_duration = Column(String)
+    peer_address = Column(String)
+    local_address = Column(String)
 
+    # ForeignKey to associate with Ngfw and VirtualRouter
+    ngfw_id = Column(Integer, ForeignKey('ngfw.id'))  
+    virtual_router_id = Column(Integer, ForeignKey('virtual_router.id'))
+
+    # Establish the many-to-one relationship with Ngfw and VirtualRouter
+    ngfw = relationship('Ngfw', back_populates='bgp_peers')
+    virtual_router = relationship('VirtualRouter', back_populates='bgp_peers')

@@ -20,12 +20,13 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 
+import ipaddress
 import pan.xapi
 import xmltodict
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from models import Ngfw, Route, VirtualRouter, Interface, Panorama
+from models import Ngfw, Route, VirtualRouter, Interface, Panorama, Neighbor, BGPPeer
 
 class MTControllerException(Exception):
     """
@@ -37,6 +38,7 @@ class MTController:
     """
     This class is used to interact with the database and the PanXapi object
     """
+
     def __init__(self, db_uri) -> None:
         """
         This method initializes the MTController class
@@ -56,140 +58,203 @@ class MTController:
 
         # Create a PanXapi object from Panorama ID and credentials
         try:
-            self.panorama = self.session.query(Panorama).first()
+            panoramas = self.session.query(Panorama).all()
         except Exception as e:
             raise MTControllerException(f"Issue querying database.  Likley need to run mt-tools first.")
 
+        self.panoramas = []
         # If no panorama in database, raise exception
-        if self.panorama:
-            if self.panorama.active:
-                hostname = self.panorama.ip_address
+        for panorama in panoramas:
+            self.panoramas.append(panorama)
+    def __set_xapi(self, ngfw) -> None:
+        """
+        This method sets the xapi object based on the ngfw
+        """
+
+        # If the ngfw has no panorama, build the appropriate xapi object
+        if not ngfw.panorama:
+            if ngfw.active:
+                self.xapi = pan.xapi.PanXapi(api_key=ngfw.api_key, hostname=ngfw.ip_address)
             else:
-                hostname = self.panorama.alt_ip
-            self.xapi = pan.xapi.PanXapi(api_key=self.panorama.api_key, hostname=hostname)
+                self.xapi = pan.xapi.PanXapi(api_key=ngfw.api_key, hostname=ngfw.alt_ip)
+
         else:
-            raise MTControllerException("No Panorama in database")
+            # if ngfw active set the serial number to the xapi object else set the alt_serial
+            self.xapi = pan.xapi.PanXapi(api_key=ngfw.panorama.api_key, hostname=ngfw.panorama.ip_address)
 
+            if ngfw.active:
+                self.xapi.serial =  ngfw.serial_number
+            else:
+                self.xapi.serial =  ngfw.alt_serial
 
-    def import_panorama_devices(self) -> list:
+        self.xapi.timeout = 5
+
+    def import_panorama_devices(self, ngfw=None) -> list:
         """
         This method imports the devices from the Panorama
         """
 
-        # show devices all on the xapi object
-        try:
-            self.xapi.op("<show><devices><all></all></devices></show>")
-        except pan.xapi.PanXapiError as e:
-            raise MTControllerException(f"Issue connecting to Panorama.  Error: {e}")
-        
-        devices = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['devices']['entry']
+        if self.panoramas == []:
+            return ["No Panoramas in database.  Exiting..."]
 
-        message = []
-        
-        # Query the database for ngfws and add serial numbers to serial_numbers list
-        serial_numbers = []
+        message = [] # for returning messages
 
-        ngfws = self.session.query(Ngfw).all()
-        for n in ngfws:
-            serial_numbers.append(n.serial_number)
-            if n.alt_serial is not None:
-                serial_numbers.append(n.alt_serial)
+        serial_numbers = [] # for checking if serial number is in database
 
-        # if devices is not a list, make it a list
-        if type(devices) != list:
-            devices = [devices]
+        for panorama in self.panoramas:
+            # Create the xapi object
+            self.xapi = pan.xapi.PanXapi(api_key=panorama.api_key, hostname=panorama.ip_address)
 
-        # for each device, add to the database
-        for d in devices:
-
-            # If serial number is not in serial_numbers, add to the database
-            if d['serial'] in serial_numbers:
-                message.append(f"* {d['hostname']} {d['serial']} already in database.  Skipping...")
-                continue
+            # show devices all on the xapi object
+            try:
+                self.xapi.op("<show><devices><all></all></devices></show>")
+            except pan.xapi.PanXapiError as e:
+                raise MTControllerException(f"Issue connecting to {panorama.hostname}. {e}")
             
-            # If connected is not yes continue
-            if d['connected'] != 'yes':
-                message.append(f"* {d['hostname']} {d['serial']} not connected.  Skipping...")
-                continue
-            
-            ngfw_info = {
-                'hostname': d['hostname'],
-                'serial_number': d['serial'],
-                'ip_address': d['ip-address'],
-                'panorama_id': self.panorama.id
-            }
+            devices = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['devices']
 
-            # Determine HA status
-            if 'ha' in d:
-                # If ha state is active, set active to true and alt_serial to peer serial number
-                if d['ha']['state'] == 'active':
-                    ngfw_info['active'] = True
-                    ngfw_info['alt_serial'] = d['ha']['peer']['serial'] 
-                else:
-                    message.append(f"* {ngfw_info['hostname']} {ngfw_info['serial_number']} is not active.  Skipping...")
-                    continue
+            if devices:
+                devices = devices['entry']
             else:
-                ngfw_info['active'] = True
-                ngfw_info['alt_serial'] = None
-            
-            new_ngfw = Ngfw(**ngfw_info)
+                message.append(f"* No devices found on {panorama.hostname}")
+                continue
 
-            self.session.add(new_ngfw)
+            ngfws = self.session.query(Ngfw).all()
+            for n in ngfws:
+                serial_numbers.append(n.serial_number)
+                if n.alt_serial is not None:
+                    serial_numbers.append(n.alt_serial)
 
-            message.append(f"+ {ngfw_info['hostname']} {new_ngfw.serial_number} added to database") 
-            
-        self.session.commit()
+            # If devices is not a list, make it a list
+            if type(devices) != list:
+                devices = [devices]
+
+            # For each device, add to the database
+            for d in devices:
+
+                # If serial number is not in serial_numbers, add to the database
+                if d['serial'] in serial_numbers:
+                    message.append(f"* {d['hostname']} {d['serial']} already in database.  Skipping...")
+                    continue
+                
+                # If connected is not yes continue
+                if d['connected'] != 'yes':
+                    message.append(f"* {d['hostname']} {d['serial']} not connected.  Skipping...")
+                    continue
+                
+                ngfw_info = {
+                    'hostname': d['hostname'],
+                    'serial_number': d['serial'],
+                    'ip_address': d['ip-address'],
+                    'panorama_id': panorama.id
+                }
+
+                # Determine HA status
+                if 'ha' in d:
+                    # If ha state is active, set active to true and alt_serial to peer serial number
+                    if d['ha']['state'] == 'active':
+                        ngfw_info['active'] = True
+                        ngfw_info['alt_serial'] = d['ha']['peer']['serial'] 
+                    else:
+                        message.append(f"* {ngfw_info['hostname']} {ngfw_info['serial_number']} is not active.  Skipping...")
+                        continue
+                else:
+                    ngfw_info['active'] = True
+                    ngfw_info['alt_serial'] = None
+                
+                new_ngfw = Ngfw(**ngfw_info)
+
+                self.session.add(new_ngfw)
+
+                message.append(f"+ {ngfw_info['hostname']} {new_ngfw.serial_number} added to database") 
+                
+            self.session.commit()
 
         return message
 
-
-    def refresh_ngfws(self, ngfw=None) -> None:
+    def refresh_ngfws(self, ngfw=None) -> list:
         """
         This method refreshes the ngfws in the database
         """
 
-        interface_query = self.session.query(Interface)
-        route_query = self.session.query(Route)
-        vr_query = self.session.query(VirtualRouter)
+        message = []
+
+        # # Create a query for ngfws
         ngfw_query = self.session.query(Ngfw)
 
+        # If ngfw is present, filter the query for the ngfw
         if ngfw:
-            interface_query = interface_query.join(Interface.virtual_router).join(VirtualRouter.ngfw).filter(Ngfw.hostname == ngfw)
-            route_query = route_query.join(Route.virtual_router).join(VirtualRouter.ngfw).filter(Ngfw.hostname == ngfw)
-            vr_query = vr_query.join(VirtualRouter.ngfw).filter(Ngfw.hostname == ngfw)
             ngfw_query = ngfw_query.filter(Ngfw.hostname == ngfw)
 
-        interfaces = interface_query.all()
-        routes = route_query.all()
-        virtual_routers = vr_query.all()
+        
         ngfw_list = ngfw_query.all()
 
-        # for each interface, route and virtual router, delete from the database
-        for i in interfaces:
-            self.session.delete(i)
-        for r in routes:
-            self.session.delete(r)
-        for vr in virtual_routers:
-            self.session.delete(vr)
+        if not ngfw_list:
+            message.append("No ngfws found in database.  Exiting...")
+            return message
 
         # for each ngfw
         for n in ngfw_list:
+            ## Interfaces Code Block ##
+            interface_list = []
 
-            # if ngfw active set the serial number to the xapi object else set the alt_serial
+            interfaces, m = self.show_interfaces(n.hostname)
 
-            if n.active:
-                self.xapi.serial =  n.serial_number
-            else:
-                self.xapi.serial =  n.alt_serial
+            # if no interfaces are found, skip the ngfw and append the message
+            if m:
+                message.append(m[0])
+                continue
 
+            # Create a query for interfaces, routes, virtual routers, and ngfws
+            iq = self.session.query(Interface).join(Interface.virtual_router).join(VirtualRouter.ngfw).filter(Ngfw.id == n.id).all()
+            rq = self.session.query(Route).join(Route.virtual_router).join(VirtualRouter.ngfw).filter(Ngfw.id == n.id).all()
+            bq = self.session.query(BGPPeer).join(BGPPeer.ngfw).filter(Ngfw.id == n.id).all()
+            vq = self.session.query(VirtualRouter).join(VirtualRouter.ngfw).filter(Ngfw.id == n.id).all()
+            nq = self.session.query(Neighbor).join(Neighbor.ngfw).filter(Ngfw.id == n.id).all()
 
-            # show routing route for ipv4 on the xapi object
+            # Create a list of lists containing the objects to delete
+            objects_to_delete = [iq, rq, bq, vq, nq]
 
+            for obj_list in objects_to_delete:
+                for obj in obj_list:
+                    self.session.delete(obj)
+
+            virtual_routers = set()
+
+            for i in interfaces:
+                virtual_routers.add(i['virtual_router'])
+
+            for vr in virtual_routers:
+                new_vr = VirtualRouter(name=vr, ngfw_id=n.id)
+                self.session.add(new_vr)
+            
+            self.session.commit()
+
+            for i in interfaces:
+                vr = self.session.query(VirtualRouter).filter(VirtualRouter.name == i['virtual_router']).filter(VirtualRouter.ngfw_id == n.id).first()
+
+                new_interface = Interface(
+                                            name=i['name'],
+                                            tag=i['tag'],
+                                            vsys=i['vsys'],
+                                            zone=i['zone'],
+                                            ip=i['ip'],
+                                            virtual_router_id=vr.id
+                                        )
+                
+                interface_list.append(new_interface)
+
+                self.session.add(new_interface)
+
+            self.session.commit()
+
+            ## Routes Code Block ##
             try:
                 self.xapi.op("<show><routing><route><afi>ipv4</afi></route></routing></show>")
             except pan.xapi.PanXapiError as e:
-                raise MTControllerException(f"Issue connecting to Panorama.  Error: {e}")
-
+                message.append(f"! {n.hostname} {e}")
+                continue
+            
             try:
                 routes = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['entry']
             except:
@@ -199,220 +264,104 @@ class MTController:
             if type(routes) != list:
                 routes = [routes]
 
-            # set object for virtual router
-            virtual_routers = set()
-
+            # For each route, get the id of the virtual router based on name and ngfw, add to the database
             for r in routes:
-                virtual_routers.add(r.get('virtual-router', 'N/A'))
 
-            # add all the virtual_routers to the database, capture the id given by the database
-            for vr in virtual_routers:
-                new_vr = VirtualRouter(name=vr, ngfw_id=n.id)
-                self.session.add(new_vr)
-
-            self.session.commit()
-
-            # for each route, get the id of the virtual router based on name and ngfw, add to the database
-            for r in routes:
                 vr = self.session.query(VirtualRouter).filter(VirtualRouter.name == r.get('virtual-router', 'N/A')).filter(VirtualRouter.ngfw_id == n.id).first()
-                new_route = Route(virtual_router_id=vr.id, destination=r.get('destination', 'N/A'), nexthop=r.get('nexthop', 'N/A'), metric=r.get('metric', 'N/A'), flags=r.get('flags', 'N/A'), age=r.get('age', 'N/A'), interface=r.get('interface', 'N/A'), route_table=r.get('route-table', 'N/A'))
+                new_route = Route(virtual_router_id=vr.id, 
+                                  destination=r.get('destination', 'N/A'), 
+                                  nexthop=r.get('nexthop', 'N/A'), 
+                                  metric=r.get('metric', 'N/A'), 
+                                  flags=r.get('flags', 'N/A'), 
+                                  age=r.get('age', 'N/A'), 
+                                  interface=r.get('interface', 'N/A'), 
+                                  route_table=r.get('route-table', 'N/A'))
+
+                # try to determine BGP route egress interface
+                if "B" in new_route.flags:
+
+                    bgp_nexthop = ipaddress.IPv4Address(new_route.nexthop)
+                    
+                    for i in interface_list:
+
+                        try:
+                            cidr = ipaddress.IPv4Network(i.ip, strict=False)
+                        except Exception as e:
+                            continue
+
+                        if bgp_nexthop in cidr:
+                            new_route.interface = i.name
+                            break
+
                 self.session.add(new_route)
 
             self.session.commit()
 
-            # if ngfw.active set the serial number to the xapi object else set the alt_serial
-            if n.active:
-                self.xapi.serial =  n.serial_number
-            else:
-                self.xapi.serial =  n.alt_serial
-
-            # show the interfaces on the xapi object
-            try:
-                self.xapi.op("<show><interface>all</interface></show>")
-            except pan.xapi.PanXapiError as e:
-                raise MTControllerException(f"Issue connecting to Panorama.  Error: {e}")
+            ## BGP Peers Code Block ##
             
-            interfaces = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['ifnet']['entry']
+            bgp_peers, m = self.show_bgp_peers(ngfw=n.hostname)
 
-            # if interfaces is not a list, make it a list
-            if type(interfaces) != list:
-                interfaces = [interfaces]
-
-            # For each interface, get the id of the virtual router based on name and ngfw, add to the database
-            for i in interfaces:
-                if 'fwd' not in i:
-                    continue
-                if 'vr' not in i['fwd']:
-                    continue
-                if i['zone'] == None:
-                    continue
-                
-                # Verify the vr exists in the database
-                vr_name = i['fwd'].replace('vr:', '')
-                vr = self.session.query(VirtualRouter).filter(VirtualRouter.name == vr_name).filter(VirtualRouter.ngfw_id == n.id).first()
-
-                if not vr:
-                    continue
-
-                new_interface = Interface(name=i.get('name', 'N/A'),
-                                            tag=i.get('tag', 'N/A'),
-                                            vsys=i.get('vsys', 'N/A'),
-                                            zone=i.get('zone', 'N/A'),
-                                            fwd=i.get('fwd', 'N/A'),
-                                            ip=i.get('ip', 'N/A'),
-                                            addr=i.get('addr', 'N/A'),
-                                            virtual_router_id=vr.id)
-                self.session.add(new_interface)
-            self.session.commit()     
-        
-
-
-    def refresh_routes(self, ngfw=None, virtual_router=None) -> None:
-        """
-        This method refreshes the routes in the database
-        """
-
-        query = self.session.query(Route).join(Route.virtual_router)
-        ngfw_query = self.session.query(Ngfw)
-        if ngfw:
-            query = query.join(VirtualRouter.ngfw).filter(Ngfw.hostname == ngfw)
-            ngfw_query = ngfw_query.filter(Ngfw.hostname == ngfw)
-        if virtual_router:
-            query = query.filter(VirtualRouter.name == virtual_router)
-            ngfw_query = ngfw_query.join(Ngfw.virtual_routers).filter(VirtualRouter.name == virtual_router)
-
-        ngfw_list = ngfw_query.all()
-        routes = query.all()
-
-        if not routes:
-            return None
-    
-        # delete all queried routes from database
-        for r in routes:
-            self.session.delete(r)
-
-        self.session.commit()
-
-        for n in ngfw_list:
-
-            # if ngfw.active set the serial number to the xapi object else set the alt_serial
-            if n.active:
-                self.xapi.serial =  n.serial_number
-            else:
-                self.xapi.serial =  n.alt_serial
-
-            # show routing route for ipv4 on the xapi object
-            try:
-                self.xapi.op("<show><routing><route><afi>ipv4</afi></route></routing></show>")
-            except pan.xapi.PanXapiError as e:
-                raise MTControllerException(f"Issue connecting to Panorama.  Error: {e}")
-
-            try:
-                routes = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['entry']
-            except KeyError:
+            if m:
+                message.append(m[0])
                 continue
 
-            # if routes is not a list, make it a list
-            if type(routes) != list:
-                routes = [routes]
+            if bgp_peers:
+                for bgp_p in bgp_peers:
+                    vr = self.session.query(VirtualRouter).filter(VirtualRouter.name == bgp_p['virtual_router']).filter(VirtualRouter.ngfw_id == n.id).first()
+                    new_bgp_peer = BGPPeer(
+                                            ngfw_id=n.id,
+                                            virtual_router_id=vr.id,
+                                            peer_name=bgp_p['peer_name'],
+                                            peer_group=bgp_p['peer_group'],
+                                            peer_router_id=bgp_p['peer_router_id'],
+                                            remote_as=bgp_p['remote_as'],
+                                            status=bgp_p['status'],
+                                            status_duration=bgp_p['status_duration'],
+                                            peer_address=bgp_p['peer_address'],
+                                            local_address=bgp_p['local_address']
+                                        )
 
-            # for each route, get the id of the virtual router based on name and ngfw, add to the database
-            for r in routes:
-                vr = self.session.query(VirtualRouter).filter(VirtualRouter.name == r.get('virtual-router', 'N/A')).filter(VirtualRouter.ngfw_id == n.id).first()
-                
-                route_data = {
-                    'virtual_router_id': vr.id,
-                    'destination': r.get('destination', 'N/A'),
-                    'nexthop': r.get('nexthop', 'N/A'),
-                    'metric': r.get('metric', 'N/A'),
-                    'flags': r.get('flags', 'N/A'),
-                    'age': r.get('age', 'N/A'),
-                    'interface': r.get('interface', 'N/A'),
-                    'route_table': r.get('route-table', 'N/A')
-                }
+                    self.session.add(new_bgp_peer)
 
-                # Create a new Route instance with the dictionary as kwargs
-                new_route = Route(**route_data)
+            ## LLDP Neighbors Code Block ##
 
-                # Add the new_route to the session
-                self.session.add(new_route)
+            lldp_neighbors, m = self.show_lldp_neighbors(n.hostname)
 
-        self.session.commit()
-        
+            if m:
+                message.append(m[0])
+                continue
 
-    def refresh_interfaces(self, ngfw=None) -> None:
-        """
-        This method refreshes the interfaces in the database
-        """
+            for lldp_n in lldp_neighbors:
+                    new_neighbor = Neighbor(
+                            ngfw_id=n.id,
+                            local_interface=lldp_n['local_interface'],
+                            remote_interface_id=lldp_n['remote_interface_id'] or None,
+                            remote_interface_description=lldp_n['remote_interface_description'] or None,
+                            remote_hostname=lldp_n['remote_hostname'] or None
+                            )
 
-        query = self.session.query(Interface).join(Interface.virtual_router)
-
-        if ngfw:
-            query = query.join(VirtualRouter.ngfw).filter(Ngfw.hostname == ngfw)
-            ngfw_list = self.session.query(Ngfw).filter(Ngfw.hostname == ngfw).all()
-        else:
-            ngfw_list = self.session.query(Ngfw).all()
-        
-        interfaces = query.all()
-
-        if not interfaces:
-            return None
-        
-        # delete all queried interfaces from database
-        for i in interfaces:
-            self.session.delete(i)
-        
-        self.session.commit()
-
-        # for each ngfw
-        for n in ngfw_list:
-
-            # if ngfw.active set the serial number to the xapi object else set the alt_serial
-            if n.active:
-                self.xapi.serial =  n.serial_number
-            else:
-                self.xapi.serial =  n.alt_serial
-
-            # show the interfaces on the xapi object
-            try:
-                self.xapi.op("<show><interface>all</interface></show>")
-            except pan.xapi.PanXapiError as e:
-                raise MTControllerException(f"Issue connecting to Panorama.  Error: {e}")
+                    self.session.add(new_neighbor)
             
-            interfaces = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['ifnet']['entry']
+            self.session.commit()
 
-            # if interfaces is not a list, make it a list
-            if type(interfaces) != list:
-                interfaces = [interfaces]
+            message.append(f"* {n.hostname} {n.serial_number} refreshed")
+        
+        return message
+    def get_inventory(self) -> dict:
 
-            # For each interface, get the id of the virtual router based on name and ngfw, add to the database
-            for i in interfaces:
-                if 'fwd' not in i:
-                    continue
-                if 'vr' not in i['fwd']:
-                    continue
-                if i['zone'] == None:
-                    continue
-                
-                # Verify the vr exists in the database
-                vr_name = i['fwd'].replace('vr:', '')
-                vr = self.session.query(VirtualRouter).filter(VirtualRouter.name == vr_name).filter(VirtualRouter.ngfw_id == n.id).first()
+        # For each tabel in the database, get the count
+        inventory = {
+            'Panoramas' : self.session.query(Panorama).count(),
+            'NGFWs': self.session.query(Ngfw).count(),
+            'Virtual Routers': self.session.query(VirtualRouter).count(),
+            'Interfaces': self.session.query(Interface).count(),
+            'Routes': self.session.query(Route).count(),
+            'BGP Peers': self.session.query(BGPPeer).count(),
+            'Neighbors': self.session.query(Neighbor).count()
+        }
 
-                if not vr:
-                    continue
-
-                new_interface = Interface(name=i.get('name', 'N/A'),
-                                            tag=i.get('tag', 'N/A'),
-                                            vsys=i.get('vsys', 'N/A'),
-                                            zone=i.get('zone', 'N/A'),
-                                            fwd=i.get('fwd', 'N/A'),
-                                            ip=i.get('ip', 'N/A'),
-                                            addr=i.get('addr', 'N/A'),
-                                            virtual_router_id=vr.id)
-                self.session.add(new_interface)
-
-        self.session.commit()
-
+        return inventory
+    
     def get_routes(self, ngfw=None, virtual_router=None, destination=None, flags=None) -> list:
         """
         This method returns a list of routes
@@ -467,7 +416,7 @@ class MTController:
                 if interface_info:
                     route_data['zone'] = interface_info.zone
                 else:
-                    route_data['zone'] = "none"
+                    route_data['zone'] = "None"
 
             formatted_routes.append(route_data)
 
@@ -482,7 +431,7 @@ class MTController:
 
         if ngfw:
             query = query.join(VirtualRouter.ngfw).filter(Ngfw.hostname == ngfw)
-        if virtual_router and not ngfw:
+        if virtual_router:
             query = query.filter(VirtualRouter.name == virtual_router)
         
         interfaces = query.all()
@@ -506,8 +455,46 @@ class MTController:
             
             formatted_interfaces.append(interface_dict)
 
-        return formatted_interfaces
+        return formatted_interfaces, []
     
+    def get_bgp_peers(self, ngfw=None, virtual_router=None) -> list:
+        """
+        This method returns a list of bgp peers
+        """
+
+        query = self.session.query(BGPPeer)
+
+        if ngfw:
+            query = query.join(BGPPeer.ngfw).filter(Ngfw.hostname == ngfw)
+        if virtual_router:
+            query = query.join(BGPPeer.virtual_router).filter(VirtualRouter.name == virtual_router)
+        
+        bgp_peers = query.all()
+
+        if not bgp_peers:
+            return None, None
+        
+        formatted_bgp_peers = []
+
+        # For each bgp peer in bgp_peers, build a dictionary and append to the formatted_bgp_peers list
+        for bgp_p in bgp_peers:
+            bgp_peer_dict = {
+                'ngfw': bgp_p.ngfw.hostname,
+                'virtual_router': bgp_p.virtual_router.name,
+                'peer_name': bgp_p.peer_name,
+                'peer_group': bgp_p.peer_group,
+                'peer_router_id': bgp_p.peer_router_id,
+                'remote_as': bgp_p.remote_as,
+                'status': bgp_p.status,
+                'status_duration': bgp_p.status_duration,
+                'peer_address': bgp_p.peer_address,
+                'local_address': bgp_p.local_address
+            }
+
+            formatted_bgp_peers.append(bgp_peer_dict)
+
+        return formatted_bgp_peers, []
+        
     def get_virtual_routers(self, ngfw=None):
         """
         This method returns a list of virtual routers
@@ -561,16 +548,44 @@ class MTController:
                 'hostname': ngfw.hostname,
                 'serial_number': ngfw.serial_number,
                 'ip_address': ngfw.ip_address,
-                'alt_serial': ngfw.alt_serial,
-                'active': ngfw.active,
-               'panorama': ngfw.panorama.hostname if ngfw.panorama else 'None'  # Handle if panorama is None
+                'alt_serial': ngfw.alt_serial or '',
+                'active': 'yes' if ngfw.active else 'no',
+               'panorama': ngfw.panorama.hostname if ngfw.panorama else ''  # Handle if panorama is None
             }
 
             formatted_ngfws.append(ngfw_dict)
 
         return formatted_ngfws
     
-    # Get the panorama
+    def get_neighbors(self, ngfw=None):
+
+        query = self.session.query(Neighbor)
+
+        if ngfw:
+            query = query.join(Neighbor.ngfw).filter(Ngfw.hostname == ngfw)
+
+        neighbors = query.all()
+
+        if not neighbors:
+            return None, None
+        
+        formatted_neighbors = []
+
+        # For each neighbor in neighbors, build a dictionary and append to the formatted_neighbors list
+        for n in neighbors:
+            neighbor_dict = {
+                'ngfw': n.ngfw.hostname,
+                'local_interface': n.local_interface,
+                'remote_interface_id': n.remote_interface_id or '',
+                'remote_interface_description': n.remote_interface_description or '',
+                'remote_hostname': n.remote_hostname or ''
+            }
+
+            formatted_neighbors.append(neighbor_dict)
+
+        return formatted_neighbors, []
+
+    # Get panorama
     def get_panoramas(self) -> list:
         """
         This method returns a list of panoramas
@@ -585,61 +600,146 @@ class MTController:
             pan_info = {
                 'hostname': p.hostname,
                 'ip_address': p.ip_address,
-                'alt_ip': p.alt_ip,
-                'active': p.active
+                'alt_ip': p.alt_ip or "",
+                'active': 'yes' if p.active else 'no'
             }
 
             formatted_panorama.append(pan_info)
         
         return formatted_panorama
     
-    def test_fib_lookup(self, ip_address, vr_query=None, ngfw_query=None) -> list:
+    def calculate_fib_lookup(self, ip_address, vr_query=None, ngfw_query=None) -> list:
         """
         This method returns a list of fib lookups
         """
 
-        # If ngfw_query and vr_query are present, query the database for the virtual router on the ngfw
-        if ngfw_query and vr_query:
-            virtual_routers = self.session.query(VirtualRouter).\
-                    join(VirtualRouter.ngfw).filter(VirtualRouter.name == vr_query, Ngfw.hostname == ngfw_query).all()
-            if not virtual_routers:
-                return
-            
-        # If ngfw_query is present, query the database for the virtual routers on the ngfw
-        elif ngfw_query and not vr_query:
-            virtual_routers = self.session.query(VirtualRouter).join(VirtualRouter.ngfw).filter(Ngfw.hostname == ngfw_query).\
-                    all()
+        query = self.session.query(VirtualRouter)
 
-            if not virtual_routers:
-                return
+        if ngfw_query:
+            query = query.join(VirtualRouter.ngfw).filter(Ngfw.hostname == ngfw_query)
+        if vr_query:
+            query = query.filter(VirtualRouter.name == vr_query)
+
+        virtual_routers = query.all()
+
+        if not virtual_routers:
+            return None, None
+
+        # Results to be returned
+        formatted_results = []
+        message = []
+
+        # Convert ip_address to ipaddress object
+        try:
+            ip_address = ipaddress.IPv4Address(ip_address)
+        except:
+            raise MTControllerException(f"Invalid IPv4 Address: {ip_address}")
+
+        # For each virtual-router get routes and compare ip_address to destination
+        for vr in virtual_routers:
+            routes = self.session.query(Route).join(Route.virtual_router).filter(VirtualRouter.name == vr.name).filter(VirtualRouter.ngfw_id == vr.ngfw_id).all()
+
+            # If routes is empty, continue
+            if not routes:
+                continue
             
-        # If vr_query is present, query the database for the virtual router
-        elif vr_query and not ngfw_query:
-            virtual_routers = self.session.query(VirtualRouter).filter(VirtualRouter.name == vr_query).all()
-            if not virtual_routers:
-                return
-        # If neither ngfw_query nor vr_query are present, query the database for all virtual routers
-        else:
-            virtual_routers = self.session.query(VirtualRouter).all()
-            if not virtual_routers:
-                    return
+            dst = {}
+            prefix = 0
+
+            # For each route, if the destination is not in the ip_address, continue
+            for r in routes:
+
+                # If the route is not active, continue
+                if "A" not in r.flags:
+                    continue
+
+                destination = ipaddress.IPv4Network(r.destination)
+                if ip_address in destination:
+                    dst[destination.prefixlen] = r
+                    if int(destination.prefixlen) > prefix:
+                        prefix = int(destination.prefixlen)
+
+            # if no results found for prefixs' (likley caused by a vr with no default route), continue
+            if len(dst) == 0:
+
+                formatted_results.append( {
+                'ngfw': vr.ngfw.hostname,
+                'virtual_router': vr.name,
+                'destination': "None",
+                'nexthop': "None",
+                'flags': "None",
+                'interface': "None",
+                'zone': 'None'
+                })
+
+                continue
+            
+            # Route data to be returned
+            route_data = {
+                'ngfw': vr.ngfw.hostname,
+                'virtual_router': vr.name,
+                'destination': dst[prefix].destination,
+                'nexthop': dst[prefix].nexthop,
+                'flags': dst[prefix].flags,
+                'interface': dst[prefix].interface or "None",
+            }
+
+            # If H (Host) is present in the flags string, query the database for interface based on destination, where destination is in the interface ip address range
+            if 'H' in route_data['flags']:
+                interface_info = self.session.query(Interface).filter(Interface.ip.contains(route_data['destination'].replace("/32",""))).first()
+                if interface_info:
+                    route_data['interface'] = interface_info.name
+                    route_data['zone'] = interface_info.zone
+                else:
+                    route_data['zone'] = "None"
+                    route_data['interface'] = "None"
+
+            # Zone based on query of interface table from interface name, ngfw, and virtual router
+            else:
+                interface_info = self.session.query(Interface).filter(Interface.name == route_data['interface']).filter(Interface.virtual_router_id == r.virtual_router_id).first()
+                if interface_info:
+                    route_data['zone'] = interface_info.zone
+                else:
+                    route_data['zone'] = "none"
+
+            # Verify Next Hop
+            if route_data['nexthop'] == "0.0.0.0":
+                route_data['nexthop'] = "self"
+
+            formatted_results.append(route_data)
+
+        return formatted_results, message
+     
+    def test_fib_lookup(self, ip_address, vr_query=None, ngfw_query=None) -> list:
+        """
+        This method returns a list of fib lookups
+        """
+        query = self.session.query(VirtualRouter)
+
+        if ngfw_query:
+            query = query.join(VirtualRouter.ngfw).filter(Ngfw.hostname == ngfw_query)
+        if vr_query:
+            query = query.filter(VirtualRouter.name == vr_query)
+
+        virtual_routers = query.all()
+        
+        if not virtual_routers:
+            return None, None
 
         formatted_results = []
+        message = []
 
         # For each virtual-router build an xapi object
         for vr in virtual_routers:
-
-            # if ngfw.active set the serial number to the xapi object else set the alt_serial
-            if vr.ngfw.active:
-                self.xapi.serial =  vr.ngfw.serial_number
-            else:
-                self.xapi.serial =  vr.ngfw.alt_serial
+            
+            self.__set_xapi(vr.ngfw)
 
             # show routing fib ip-address <ip_address> on the xapi object
             try:
                 self.xapi.op(f"<test><routing><fib-lookup><ip>{ip_address}</ip><virtual-router>{vr.name}</virtual-router></fib-lookup></routing></test>")
             except pan.xapi.PanXapiError as e:
-                raise MTControllerException(f"Issue connecting to Panorama.  Error: {e}")
+                message.append(f"! {vr.ngfw.hostname} {e}")
+                continue
 
             try:
                 result = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']
@@ -648,7 +748,7 @@ class MTController:
             
             # If 'interface' is not in result, set result to none fields and continue
             if 'interface' not in result:
-                result = {'hostname': vr.ngfw.hostname, 'virtual_router': vr.name, 'interface': 'none', 'nexthop': 'none', 'zone': 'none'}
+                result = {'ngfw': vr.ngfw.hostname, 'virtual_router': vr.name, 'interface': 'None', 'nexthop': 'None', 'zone': 'None'}
                 formatted_results.append(result)
                 continue
 
@@ -657,7 +757,7 @@ class MTController:
             if zone_info:
                 zone = zone_info.zone
             else:
-                zone = "none"
+                zone = "None"
 
             #check if nh is a valid key
             if result['nh'] not in result:
@@ -666,38 +766,105 @@ class MTController:
                 next_hop = result[result['nh']]
 
             # Create dictionary with these values: vr.ngfw.hostname, vr.name, result['interface'], result[result['nh']], zone
-            result = {'hostname': vr.ngfw.hostname, 'virtual_router': vr.name, 'interface': result['interface'], 'nexthop': next_hop, 'zone': zone}
+            result = {
+                    'ngfw': vr.ngfw.hostname,
+                    'virtual_router': vr.name,
+                    'interface': result['interface'],
+                    'nexthop': next_hop,
+                    'zone': zone
+                    }
 
             formatted_results.append(result)
 
-        return formatted_results
+        return formatted_results, message
     
+    def show_interfaces(self, ngfw=None, virtual_router=None) -> list:
 
+        query = self.session.query(Ngfw)
+
+        if ngfw:
+            query = query.filter(Ngfw.hostname == ngfw)
+        
+        ngfw_list = query.all()
+
+        if not ngfw_list:
+            return None, None
+        
+        formatted_interfaces = []
+        message = []
+
+        for n in ngfw_list:
+
+            self.__set_xapi(n)
+
+            try:  
+                self.xapi.op("<show><interface>all</interface></show>")
+            except pan.xapi.PanXapiError as e:
+                message.append(f"! {n.hostname} {e}")
+                continue
+            
+            interfaces = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['ifnet']['entry']
+
+            # If interfaces is not a list, make it a list
+            if type(interfaces) != list:
+                interfaces = [interfaces]
+
+            # For each interface, get the id of the virtual router based on name and ngfw, add to the database
+            for i in interfaces:
+                if 'fwd' not in i:
+                    continue
+                if 'vr' not in i['fwd']:
+                    continue
+                if i['zone'] == None:
+                    continue
+                
+                vr_name = i['fwd'].replace('vr:', '')
+
+                if virtual_router:
+                    if vr_name != virtual_router:
+                        continue
+
+                new_interface = {
+                    'ngfw': n.hostname,
+                    'name': i.get('name', 'N/A'),
+                    'tag': i.get('tag', 'N/A'),
+                    'vsys': i.get('vsys', 'N/A'),
+                    'ip': i.get('ip', 'N/A'),
+                    'zone': i.get('zone', 'N/A'),
+                    'virtual_router': vr_name
+                }
+                formatted_interfaces.append(new_interface)
+
+        return formatted_interfaces, message
+    
     def show_lldp_neighbors(self, ngfw=None) -> list:
         """
         This method returns a list of lldp neighbors
         """
 
-        # IF ngfw is present, query the database for the ngfw based on the self.panorama.id and ngfw
+        query = self.session.query(Ngfw)
+
         if ngfw:
-            ngfws = self.session.query(Ngfw).filter(Ngfw.hostname == ngfw).all()
+            query = query.filter(Ngfw.hostname == ngfw)
+        
+        ngfw_list = query.all()
 
-        # IF ngfw is NOT present, query the database for all ngfws based on self.panorama.id
-        else:
-            ngfws = self.session.query(Ngfw).all()
-
-        if not ngfws:
-            return None
+        if not ngfw_list:
+            return None, None
         
         formatted_lldp_neighbors = []
-        
+        message = []
+
         # For each ngfw in ngfws, set the serial of self.xapi to ngfw.serial_number and show lldp neighbors on the xapi object
-        for n in ngfws:
-            self.xapi.serial = n.serial_number
+        for n in ngfw_list:
+
+            self.__set_xapi(n)
+            
             try:
                 self.xapi.op("<show><lldp><neighbors>all</neighbors></lldp></show>")
             except pan.xapi.PanXapiError as e:
-                raise MTControllerException(f"Issue connecting to Panorama.  Error: {e}")
+                message.append(f"! {n.hostname} {e}")
+                continue
             
             results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['entry']
 
@@ -708,7 +875,10 @@ class MTController:
             # For each result, build a dictionary and append to the formatted_results list
             for r in results:
                 
-                lldp_neighbors = r['neighbors']['entry']
+                if r['neighbors']:
+                    lldp_neighbors = r['neighbors']['entry']
+                else:
+                    continue
 
                 if type(lldp_neighbors) != list:
                     lldp_neighbors = [lldp_neighbors]
@@ -716,15 +886,14 @@ class MTController:
                 for lldp_n in lldp_neighbors:
                     neighbor_dict = {
                         'ngfw': n.hostname,
-                        'local_interface': r['@name'],
-                        'remote_interface_id': lldp_n['port-id'],
-                        'remote_interface_description': lldp_n['port-description'],
-                        'remote_hostname': lldp_n['system-name'],
+                        'local_interface': r['@name'] or "None",
+                        'remote_interface_id': lldp_n['port-id'] or "None",
+                        'remote_interface_description': lldp_n['port-description'] or "",
+                        'remote_hostname': lldp_n['system-name'] or "None",
                     }
-
                     formatted_lldp_neighbors.append(neighbor_dict)
 
-        return formatted_lldp_neighbors
+        return formatted_lldp_neighbors, message
 
 
     def show_bgp_peers(self, ngfw=None, virtual_router=None) -> list:
@@ -742,17 +911,20 @@ class MTController:
         ngfw_list = query.all()
 
         if not ngfw_list:
-            return None
+            return None, None
         
         formatted_bgp_peers = []
-
+        message = []
         # For each ngfw in ngfw_list, set the serial of self.xapi to ngfw.serial_number and show lldp neighbors on the xapi object
         for n in ngfw_list:
-            self.xapi.serial = n.serial_number
+            
+            self.__set_xapi(n)
+
             try:
                 self.xapi.op("<show><routing><protocol><bgp><peer></peer></bgp></protocol></routing></show>")
             except pan.xapi.PanXapiError as e:
-                raise MTControllerException(f"Issue connecting to Panorama.  Error: {e}")
+                message.append(f"! {n.hostname} {e}")
+                continue
             
             try:
                 bgp_peers = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['entry']
@@ -779,9 +951,13 @@ class MTController:
                             'local_address': bgp_p['local-address'].split(':')[0],
                     }
 
-                    formatted_bgp_peers.append(bgp_peer_dict)
+                    if virtual_router:
+                        if bgp_peer_dict['virtual_router'] == virtual_router:
+                            formatted_bgp_peers.append(bgp_peer_dict)
+                    else:
+                        formatted_bgp_peers.append(bgp_peer_dict)
 
-        return formatted_bgp_peers
+        return formatted_bgp_peers, message
 
     def update_ha_status(self, ngfw=None) -> list:
         """
@@ -791,28 +967,30 @@ class MTController:
         message = []
 
         # Verify panorama ha status
-        if self.panorama.alt_ip is not None:
+        for panorama in self.panoramas:
+            if panorama.alt_ip is not None:
 
-            self.xapi.serial = None
+                self.xapi = pan.xapi.PanXapi(api_key=panorama.api_key, hostname=panorama.ip_address)
 
-            try:
-                self.xapi.op("<show><high-availability><state></state></high-availability></show>")
-            except pan.xapi.PanXapiError as e:
-                raise MTControllerException(f"Issue connecting to Panorama.  Error: {e}")
-            
-            ha_info = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']
+                try:
+                    self.xapi.op("<show><high-availability><state></state></high-availability></show>")
+                except pan.xapi.PanXapiError as e:
+                    message.append("! {panorama.hostname} {e}")
+                    continue
+                
+                ha_info = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']
 
-            if ha_info['enabled'] == 'yes':
-                if 'active' in ha_info['local-info']['state']:
-                    message.append(f"Panorama {self.panorama.hostname} is active")
-                else:
-                    # Set the sql database entry for panorama.active to False
-                    self.panorama.active = False
-                    message.append(f"Panorama {self.panorama.hostname} is passive.  Using alt-ip")
-                    # Update database
-                    self.session.commit()
-        else:
-            message.append(f"Panorama {self.panorama.hostname} is standalone")
+                if ha_info['enabled'] == 'yes':
+                    if 'active' in ha_info['local-info']['state']:
+                        message.append(f"Panorama {panorama.hostname} is active")
+                    else:
+                        # Set the sql database entry for panorama.active to False
+                        panorama.active = False
+                        message.append(f"Panorama {panorama.hostname} is passive.  Using alt-ip")
+                        # Update database
+                        self.session.commit()
+            else:
+                message.append(f"Panorama {panorama.hostname} is standalone")
 
         # If ngfw is present, query the database for the ngfw
         if ngfw:
@@ -828,18 +1006,20 @@ class MTController:
         for n in ngfws:
             #if alt_serial is present set self.xapi.serial to ngfw.serial_number
             if n.alt_serial:
-                self.xapi.serial = n.serial_number
+                self.__set_xapi(n)
             else:
+                message.append(f"NGFW {n.hostname} is standalone")
                 continue
             
             try:
                 self.xapi.op("<show><high-availability><state></state></high-availability></show>")
             except pan.xapi.PanXapiError as e:
-                raise MTControllerException(f"Issue connecting to Panorama.  Error: {e}")
+                message.append(f"! {n.hostname} {e}")
+                continue
             
             ha = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['group']['local-info']
 
-            # if ha['state'] is not active set database ngfw.active to False
+            # If ha['state'] is not active set database ngfw.active to False
             if ha['state'] != 'active':
                 n.active = False
                 message.append(f"{n.hostname} is not active, using alternate serial")
