@@ -991,7 +991,7 @@ class MTController:
                         # Update database
                         self.session.commit()
             else:
-                message.append(f"Panorama {panorama.hostname} is standalone")
+                message.append(f"Panorama {panorama.hostname} is not ha")
 
         # If ngfw is present, query the database for the ngfw
         if ngfw:
@@ -1009,7 +1009,7 @@ class MTController:
             if n.alt_serial:
                 self.__set_xapi(n)
             else:
-                message.append(f"NGFW {n.hostname} is standalone")
+                message.append(f"NGFW {n.hostname} is not ha")
                 continue
             
             try:

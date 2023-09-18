@@ -220,7 +220,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Companion tools to the mt-cli")
     parser.add_argument("-b", "--build-db", action="store_true", help="Create the empty database at uri specified in config")
     parser.add_argument("-p", "--add-panorama", action="store_true", help="Add a Panorama to the database via prompt")
-    parser.add_argument("-n", "--add-ngfw", action="store_true", help="Add a standalone firewall to the database via prompt")
+    parser.add_argument("-n", "--add-ngfw", action="store_true", help="Add a non-managed firewall to the database via prompt")
     parser.add_argument("--ip-address", type=str, default=None, help="IP address (or fqdn) of Panorama or NGFW (prompt if not included)")
     parser.add_argument("--username", type=str, default=None, help="Username for Panorama or NGFW (prompt if not included)")
     parser.add_argument("--password", type=str, default=None, help="Password for Panorama or NGFW (prompt if not included)")

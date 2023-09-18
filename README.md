@@ -6,14 +6,14 @@ PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information f
 
 **Multi Panorama Support**
 - Now supports more than one Panorama (or HA pair).  
-- Adding a Panorama using `mt-tools` is now done with the `-p` or `--p` flags.
+- Adding a Panorama using `mt-tools` is now done with the `-p` or `--panorama` flags.
 
-**Stand Alone Firewall Support**
+**Non-Managed Firewall Support**
 - Firewalls (and HA pairs) now supported with the `mt-tools`, add one with the `-n` or `--ngfw` flags.
 
 **Refresh Changes**
 - Refresh is now performed by `-r` or `--refresh` and accepts only an `--ngfw` which refreshes everything about an NGFW.  This was done since the API commands are not vsys or vr specific.  
-- Note that NOT using the `--ngfw` filter will result in refreshing all NGFWs (Panorama connected or stand alone)
+- Note that NOT using the `--ngfw` filter will result in refreshing all NGFWs (Panorama connected or non-managed)
 
 **Only Show Commands**
 - The `print` command via `-p` or `--print` is no longer available.  
@@ -50,7 +50,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Build the initial database and load Panorama (or stand-along NGFW)
+Build the initial database and load Panorama (or non-managed NGFW)
 ```bash
 python mt-tools.py -b -p (or -n)
 **Prompts for Panorama info**
@@ -67,8 +67,8 @@ python mt-cli.py -r
 ```
 
 ## Considerations
-1. All API calls are made through the Panorama so you do not need direct access to the NGFWs mgmt interface (unless its stand-alone).
-2. The API Key that is generated for the Panorama and stand-alone NGFWs is stored in the SQLite database.  Protect it!
+1. All API calls are made through the Panorama so you do not need direct access to the NGFWs mgmt interface (unless its non-managed).
+2. The API Key that is generated for the Panorama and non-managed NGFWs is stored in the SQLite database.  Protect it!
 3. Recommend changing the `db_uri` variable in config.py to an absolute path where you would like it to reside.
 4. MT removes junk such as interfaces without zones or vrs, NGFWs in Panorama but not connected before entering it into the database.  You may find missing interfaces etc when using the print options.
 5. Recommend using a read-only account on Panorama for security purposes.
@@ -205,4 +205,5 @@ Here are some example commands to get you started:
 PanOS Master Tshooter is distributed under the MIT license (see LICENSE file).
 
 # Special Thanks
+
 Special thanks to Kevin Steves for developing and maintaining [pan-python](https://github.com/kevinsteves/pan-python/tree/master)

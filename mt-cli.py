@@ -348,9 +348,9 @@ def __print_results(headers, results):
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description="Retrieve and print NGFW routes, interfaces and virtual routers.  Perform on demand fib lookups")
-    parser.add_argument("-i", "--import-ngfws", action="store_true", help="Import Panorama NGFWs (run before anything else)")
+    parser.add_argument("-i", "--import-ngfws", action="store_true", help="Import Panorama NGFWs (run before anything else if using Panorama)")
     parser.add_argument("-r", "--refresh", action="store_true", help="Refresh NGFW (no filter will refresh all NGFWs)")
-    parser.add_argument("-s", "--show", type=str, default=None, help="Choose what show: 'routes', 'vrs', 'interfaces', or 'ngfws', 'pan','lldp', 'bgp-peers', 'inventory'")
+    parser.add_argument("-s", "--show", type=str, default=None, help="Choose what show: 'routes', 'vrs', 'interfaces','ngfws', 'pan','lldp', 'bgp-peers', 'inventory'")
     parser.add_argument("-f", "--fib-lookup", type=str, help="Perform FIB Lookup")
     parser.add_argument("--ha-status", action="store_true", help="Update HA Status")
     parser.add_argument("--vr", type=str, default=None, help="Virtual Router filter for various commands")
@@ -404,7 +404,7 @@ if __name__ == '__main__':
             elif args.show == 'inventory':
                 print_inventory()
             else:
-                print ("Invalid show option.  Valid options are 'routes', 'vrs', 'interfaces', 'ngfws', 'pan', 'lldp', 'bgp-peers'")
+                print ("Invalid show option.  Valid options are 'routes', 'vrs', 'interfaces', 'ngfws', 'pan', 'lldp', 'bgp-peers', 'ivnentory'")
 
     except MTControllerException as e:
         print(e)
