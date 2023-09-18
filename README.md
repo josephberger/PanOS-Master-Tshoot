@@ -6,10 +6,10 @@ PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information f
 
 **Multi Panorama Support**
 - Now supports more than one Panorama (or HA pair).  
-- Adding a Panorama using `mt-tools` is now done with the `-p` or `--panorama` flags.
+- Adding a Panorama using `mt-tools` is now done with the `-p` or `--add-panorama` flags.
 
 **Non-Managed Firewall Support**
-- Firewalls (and HA pairs) now supported with the `mt-tools`, add one with the `-n` or `--ngfw` flags.
+- Firewalls (and HA pairs) now supported with the `mt-tools`, add one with the `-n` or `--add-ngfw` flags.
 
 **Refresh Changes**
 - Refresh is now performed by `-r` or `--refresh` and accepts only an `--ngfw` which refreshes everything about an NGFW.  This was done since the API commands are not vsys or vr specific.  
