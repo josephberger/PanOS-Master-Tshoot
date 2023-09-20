@@ -26,7 +26,7 @@ import ipaddress
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
-from config import db_uri
+from config import db_uri, timeout
 from mt_controller import MTController, MTControllerException
 
 # Create the database engine
@@ -39,7 +39,7 @@ session = Session()
 
 # TODO: Determine appropriate location for this code
 try:
-    mt = MTController(db_uri=db_uri)
+    mt = MTController(db_uri=db_uri, timeout=timeout)
 except MTControllerException as e:
     print(e)
     exit()
