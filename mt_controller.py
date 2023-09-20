@@ -39,7 +39,7 @@ class MTController:
     This class is used to interact with the database and the PanXapi object
     """
 
-    def __init__(self, db_uri) -> None:
+    def __init__(self, db_uri, timeout=5) -> None:
         """
         This method initializes the MTController class
         """
@@ -66,6 +66,9 @@ class MTController:
         # If no panorama in database, raise exception
         for panorama in panoramas:
             self.panoramas.append(panorama)
+
+        self.timeout = timeout
+
     def __set_xapi(self, ngfw) -> None:
         """
         This method sets the xapi object based on the ngfw
@@ -87,7 +90,7 @@ class MTController:
             else:
                 self.xapi.serial =  ngfw.alt_serial
 
-        self.xapi.timeout = 5
+        self.xapi.timeout = self.timeout
 
     def import_panorama_devices(self, ngfw=None) -> list:
         """
@@ -438,7 +441,7 @@ class MTController:
         interfaces = query.all()
 
         if not interfaces:
-            return None
+            return None, None
             
         formatted_interfaces = []
 

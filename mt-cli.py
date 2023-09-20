@@ -359,8 +359,18 @@ if __name__ == '__main__':
     parser.add_argument("--dst", type=str, default=None, help="Destination filter for routes")
     parser.add_argument("--flag", type=str, default=None, help="Comma separated flags for routes")
     parser.add_argument("--on-demand", action="store_true", help="On demand API call vs querying the database.")
+    parser.add_argument("-t", "--timeout", type=int, default=None, help="Timeout for the API calls.  Default is 5 (seconds)")
     
     args = parser.parse_args()
+
+    if args.timeout:
+        try:
+            args.timeout = int(args.timeout)
+        except ValueError:
+            print("Timeout must be an integer.")
+            exit()
+            
+        mt.timeout = args.timeout
 
     try:
         
