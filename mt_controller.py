@@ -941,25 +941,24 @@ class MTController:
             # For each result, build a dictionary and append to the formatted_results list
             for bgp_p in bgp_peers:
                 
-                for bgp_p in bgp_peers:
-                    bgp_peer_dict = {
-                            'ngfw': n.hostname,
-                            'virtual_router':bgp_p['@vr'],
-                            'peer_name': bgp_p['@peer'], 
-                            'peer_group': bgp_p['peer-group'],
-                            'peer_router_id': bgp_p['peer-router-id'],
-                            'remote_as': bgp_p['remote-as'],
-                            'status': bgp_p['status'],
-                            'status_duration': bgp_p['status-duration'],
-                            'peer_address': bgp_p['peer-address'].split(':')[0],
-                            'local_address': bgp_p['local-address'].split(':')[0],
-                    }
+                bgp_peer_dict = {
+                        'ngfw': n.hostname,
+                        'virtual_router':bgp_p['@vr'],
+                        'peer_name': bgp_p['@peer'], 
+                        'peer_group': bgp_p['peer-group'],
+                        'peer_router_id': bgp_p['peer-router-id'],
+                        'remote_as': bgp_p['remote-as'],
+                        'status': bgp_p['status'],
+                        'status_duration': bgp_p['status-duration'],
+                        'peer_address': bgp_p['peer-address'].split(':')[0],
+                        'local_address': bgp_p['local-address'].split(':')[0],
+                }
 
-                    if virtual_router:
-                        if bgp_peer_dict['virtual_router'] == virtual_router:
-                            formatted_bgp_peers.append(bgp_peer_dict)
-                    else:
+                if virtual_router:
+                    if bgp_peer_dict['virtual_router'] == virtual_router:
                         formatted_bgp_peers.append(bgp_peer_dict)
+                else:
+                    formatted_bgp_peers.append(bgp_peer_dict)
 
         return formatted_bgp_peers, message
 
