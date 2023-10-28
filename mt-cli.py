@@ -22,29 +22,13 @@
 
 import argparse
 import ipaddress
-
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from getpass import getpass
 
 from config import db_uri, timeout
-from mt_controller import MTController, MTControllerException
+from mt_controller import MTController, MTControllerException, MTBuilder, MTBuilderException
 
-# Create the database engine
-engine = create_engine(db_uri)
 
-# Create a session to interact with the database
-Session = sessionmaker(bind=engine)
-session = Session()
-# Create an instance of the MtController class with db_uri, username, password, panorama_id
-
-# TODO: Determine appropriate location for this code
-try:
-    mt = MTController(db_uri=db_uri, timeout=timeout)
-except MTControllerException as e:
-    print(e)
-    exit()
-
-def print_inventory():
+def print_inventory(mt):
     """
     This method prints the inventory
     """
@@ -60,139 +44,137 @@ def print_inventory():
         print(f'{key}: {spacing}{value}')
 
 
-def print_routes(ngfw=None, virtual_router=None, destination=None, flags=None):
+def print_routes(mt,ngfw=None, virtual_router=None, destination=None, flags=None):
     """
     This method prints the routes
     """
 
-    routes = mt.get_routes(
+    response = mt.get_routes(
         ngfw=ngfw,
         virtual_router=virtual_router,
         destination=destination,
         flags=flags
     )
 
-    if not routes:
-        print(f"No routes found.")
-        return
+    if response['results']:
 
-    # Print Legend
-    print("""\nflags: A:active, ?:loose, C:connect, H:host, S:static, ~:internal, R:rip, O:ospf, B:bgp,
-       Oi:ospf intra-area, Oo:ospf inter-area, O1:ospf ext-type-1, O2:ospf ext-type-2, E:ecmp, M:multicast\n""")
+        # Print Legend
+        print("""\nflags: A:active, ?:loose, C:connect, H:host, S:static, ~:internal, R:rip, O:ospf, B:bgp,
+        Oi:ospf intra-area, Oo:ospf inter-area, O1:ospf ext-type-1, O2:ospf ext-type-2, E:ecmp, M:multicast\n""")
 
-    headers = {
-        "NGFW": "ngfw",
-        "Virtual Router": "virtual_router",
-        "Destination": "destination",
-        "Next Hop": "nexthop",
-        "Metric": "metric",
-        "Flags": "flags",
-        "Interface": "interface",
-        "Route Table": "route_table",
-        "Age": "age",
-        "Zone": "zone"
-    }
+        headers = {
+            "NGFW": "ngfw",
+            "Virtual Router": "virtual_router",
+            "Destination": "destination",
+            "Next Hop": "nexthop",
+            "Metric": "metric",
+            "Flags": "flags",
+            "Interface": "interface",
+            "Route Table": "route_table",
+            "Age": "age",
+            "Zone": "zone"
+        }
 
-    __print_results(headers, routes)
+        __print_results(headers, response['results'])
 
-def print_interfaces(ngfw=None, virtual_router=None, on_demand=False):
+    if response['message']:
+        print("\n".join(response['message']))
+
+def print_interfaces(mt,ngfw=None, virtual_router=None, on_demand=False):
     """
     This method prints the interfaces
     """
 
     if on_demand:
-        interfaces, message = mt.show_interfaces(ngfw=ngfw, virtual_router=virtual_router)
+        response = mt.show_interfaces(ngfw=ngfw, virtual_router=virtual_router)
     else:
-        interfaces, message = mt.get_interfaces(
-            ngfw=ngfw,
-            virtual_router=virtual_router
-        )
+        response = mt.get_interfaces(ngfw=ngfw,virtual_router=virtual_router)
         
-    if not interfaces:
-        print(f"No interfaces found.")
-        return None, None
+    if response['results']:
     
-    headers = {
-        "NGFW": "ngfw",
-        "Virtual Router": "virtual_router",
-        "Name": "name",
-        "Tag": "tag",
-        "Address": "ip",
-        "Zone": "zone"
-    }
+        headers = {
+            "NGFW": "ngfw",
+            "Virtual Router": "virtual_router",
+            "Name": "name",
+            "Tag": "tag",
+            "Address": "ip",
+            "Zone": "zone"
+        }
 
-    __print_results(headers, interfaces)
+        __print_results(headers, response['results'])
 
-    if not message:
-        pass
-    else:
-        print()
-        print("\n".join(message))
+    if response['message']:
+        print("\n".join(response['message']))
 
-def print_virtual_routers(ngfw=None):
+def print_virtual_routers(mt,ngfw=None):
     """
     This method prints the virtual routers
     """
 
-    virtual_routers = mt.get_virtual_routers(ngfw=ngfw)
+    response = mt.get_virtual_routers(ngfw=ngfw)
 
-    if not virtual_routers:
-        print(f"No virtual-routers found.")
-        return
+    if response['results']:
     
-    headers = {
-        "Hostname": "hostname",
-        "Virtual Router": "virtual_router",
-        "Route Count": "route_count",
-        "Interface Count": "interface_count"
-    }
+        headers = {
+            "Hostname": "hostname",
+            "Virtual Router": "virtual_router",
+            "Route Count": "route_count",
+            "Interface Count": "interface_count"
+        }
 
-    __print_results(headers, virtual_routers)
+        __print_results(headers, response['results'])
 
-def print_ngfws(panorama=None):
+    if response['message']:
+        print("\n".join(response['message']))
+
+def print_ngfws(mt,panorama=None):
     """
     This method prints the ngfws
     """
 
-    ngfws_list = mt.get_ngfws(panorama=panorama)
+    response = mt.get_ngfws(panorama=panorama)
 
-    if not ngfws_list:
-        print(f"No ngfws found.")
-        return
+    if response['results']:
+        headers = {
+            "Hostname": "hostname",
+            "Serial Number": "serial_number",
+            "IP Address": "ip_address",
+            "Alt Serial": "alt_serial",
+            "Active": "active",
+            "Panorama": "panorama",
+            "Last Refresh": "last_update"
+        }
+
+        __print_results(headers, response['results'])
     
-    headers = {
-        "Hostname": "hostname",
-        "Serial Number": "serial_number",
-        "IP Address": "ip_address",
-        "Alt Serial": "alt_serial",
-        "Active": "active",
-        "Panorama": "panorama"
-    }
+    if response['message']:
+        print("\n".join(response['message']))
 
-    __print_results(headers, ngfws_list)
-
-def print_panorama():
+def print_panorama(mt):
     """
     This method prints the panorama
     """
 
     # Query the database for the panorama
-    panorama = mt.get_panoramas()
+    response = mt.get_panoramas()
 
-    if not panorama:
-        print(f"No panorama found.")
-        return
+    if response['results']:
     
-    headers = {
-        "Hostname": "hostname",
-        "IP Address": "ip_address",
-        "Alt IP": "alt_ip",
-        "Active": "active"
-    }
+        headers = {
+            "Hostname": "hostname",
+            "Serial": "serial_number",
+            "IP Address": "ip_address",
+            "Alt IP": "alt_ip",
+            "Active": "active",
+            "NGFWs": "ngfws"
+        }
 
-    __print_results(headers, panorama)
+        __print_results(headers, response['results'])
 
-def test_fib_lookup(ip_address, vr_query=None, ngfw_query=None, on_demand=False):
+    if response['message']:
+        print("\n".join(response['message']))
+
+def test_fib_lookup(mt,ip_address, vr_query=None, ngfw_query=None, on_demand=False):
     """
     This method tests the fib lookup
     """
@@ -205,96 +187,82 @@ def test_fib_lookup(ip_address, vr_query=None, ngfw_query=None, on_demand=False)
         return
 
     if on_demand:
-        results, message = mt.test_fib_lookup(ip_address=ip_address, vr_query=vr_query, ngfw_query=ngfw_query)    
+        response = mt.test_fib_lookup(ip_address=ip_address, vr_query=vr_query, ngfw_query=ngfw_query)    
     else:
-        results, message = mt.calculate_fib_lookup(ip_address=ip_address, vr_query=vr_query, ngfw_query=ngfw_query)
+        response = mt.calculate_fib_lookup(ip_address=ip_address, vr_query=vr_query, ngfw_query=ngfw_query)
 
-    if not results:
-        print(f"No fib-test results returned.")
-        return
+    if response['results']:
 
-    headers = {
-        "NGFW": "ngfw",
-        "Virtual Router": "virtual_router",
-        "Interface": "interface",
-        "Next Hop": "nexthop",
-        "Zone": "zone"
-    }
+        headers = {
+            "NGFW": "ngfw",
+            "Virtual Router": "virtual_router",
+            "Interface": "interface",
+            "Next Hop": "nexthop",
+            "Zone": "zone"
+        }
 
-    __print_results(headers, results)
+        __print_results(headers, response['results'])
 
-    if not message:
-        pass
-    else:
-        print()
-        print("\n".join(message))
+    if response['message']:
+        print("\n".join(response['message']))
 
-def show_lldp_neighbors(ngfw=None, on_demand=False):
+def print_neighbors(mt,ngfw=None, on_demand=False):
     """
     This method shows the lldp neighbors
     """
 
     if on_demand:
-        lldp_neighbors, message = mt.show_lldp_neighbors(ngfw=ngfw)
+        response = mt.show_neighbors(ngfw=ngfw)
     else:
-        lldp_neighbors, message = mt.get_neighbors(ngfw=ngfw)
+        response = mt.get_neighbors(ngfw=ngfw)
 
-    if not lldp_neighbors:
-        print(f"No lldp neighbors found.")
-        return
+    if response['results']:
     
-    headers = {
-        "NGFW": "ngfw",
-        "Local Interface": "local_interface",
-        "Remote Interface ID": "remote_interface_id",
-        "Remote Interface Description": "remote_interface_description",
-        "Remote Hostname": "remote_hostname"
-    }
+        headers = {
+            "NGFW": "ngfw",
+            "Local Interface": "local_interface",
+            "Remote Interface ID": "remote_interface_id",
+            "Remote Interface Description": "remote_interface_description",
+            "Remote Hostname": "remote_hostname"
+        }
 
-    __print_results(headers, lldp_neighbors)
+        __print_results(headers, response['results'])
 
-    if not message:
-        pass
-    else:
-        print()
-        print("\n".join(message))
+    if response['message']:
+        print("\n".join(response['message']))
 
-def show_bgp_peers(ngfw=None, virtual_router=None, on_demand=False):
+def print_bgp_peers(mt,ngfw=None, virtual_router=None, on_demand=False):
     """
     This method shows the bgp peers
     """
 
+
     if on_demand:
-        bgp_peers, message = mt.show_bgp_peers(ngfw=ngfw, virtual_router=virtual_router)
+        response = mt.show_bgp_peers(ngfw=ngfw, virtual_router=virtual_router)
     else:
-        bgp_peers, message  = mt.get_bgp_peers(ngfw=ngfw, virtual_router=virtual_router)
+        response = mt.get_bgp_peers(ngfw=ngfw, virtual_router=virtual_router)
 
-    if not bgp_peers:
-        print(f"No bgp peers found.")
-        return
-    
-    headers = {
-        "NGFW": "ngfw",
-        "Virtual Router": "virtual_router",
-        "Peer Name": "peer_name",
-        "Peer Group": "peer_group",
-        "Peer Router ID": "peer_router_id",
-        "Remote AS": "remote_as",
-        "Status": "status",
-        "Duration": "status_duration",
-        "Peer Address": "peer_address",
-        "Local Address": "local_address"
-    }
+    if response['results']:
 
-    __print_results(headers, bgp_peers)
+        headers = {
+            "NGFW": "ngfw",
+            "Virtual Router": "virtual_router",
+            "Peer Name": "peer_name",
+            "Peer Group": "peer_group",
+            "Peer Router ID": "peer_router_id",
+            "Remote AS": "remote_as",
+            "Status": "status",
+            "Duration": "status_duration",
+            "Peer Address": "peer_address",
+            "Local Address": "local_address"
+        }
 
-    if not message:
-        pass
-    else:
-        print()
-        print("\n".join(message))
+        __print_results(headers, response['results'])
 
-def refresh_ngfws(ngfw=None):
+    if response['message']:
+        print("\n".join(response['message']))
+
+def refresh_ngfws(mt,ngfw=None):
 
     if not ngfw:
         ngfw_count = int(mt.get_inventory()['NGFWs'])
@@ -311,6 +279,82 @@ def refresh_ngfws(ngfw=None):
     message = mt.refresh_ngfws(ngfw=ngfw)
 
     print("\n".join(message))
+
+def add_panorama(mb, username=None, password=None, ip_address=None):
+    """
+    This method adds a panorama to the database
+    """
+    # Get hostname, ip address, alt ip, and active from user input
+    if ip_address is None:
+        ip_address = input("Enter the IP address (can be fqdn): ")
+    if username is None:
+        username = input("Enter the username: ")
+    if password is None:
+        password = getpass("Enter password: ")
+
+    # Add the panorama to the database
+    try:
+        response = mb.add_panorama(ip_address=ip_address, username=username, password=password)
+        print(response)
+        print(f"!!WARINING!! API key is stored in plaintext in the database.  Set appropriate permissions on the database.")
+    except MTBuilderException as e:
+        print(e)
+        exit()
+
+def add_ngfw(mb, username=None, password=None, ip_address=None):
+    """
+    This method adds a ngfw to the database
+    """
+    # Get hostname, ip address, alt ip, and active from user input
+    if ip_address is None:
+        ip_address = input("Enter the IP address (can be fqdn): ")
+    if username is None:
+        username = input("Enter the username: ")
+    if password is None:
+        password = getpass("Enter password: ")
+
+    # Add the panorama to the database
+    try:
+        response = mb.add_ngfw(ip_address=ip_address, username=username, password=password)
+        print(response)
+        print(f"!!WARINING!! API key is stored in plaintext in the database.  Set appropriate permissions on the database.")
+    except MTBuilderException as e:
+        print(e)
+        exit()
+
+def delete_panorama(mb, serial_number=None):
+    """
+    This method deletes a panorama from the database
+    """
+    # Get serial number from user input
+    if serial_number is None:
+        serial_number = input("Enter the serial number: ")
+
+    # Delete the panorama from the database
+    try:
+        response = mb.delete_panorama(serial_number=serial_number)
+        print(response)
+    except MTBuilderException as e:
+        print(e)
+        exit()
+
+def delete_ngfw(mb, serial_number=None):
+    """
+    This method deletes a ngfw from the database
+    """
+    # Get serial number from user input
+    if serial_number is None:
+        serial_number = input("Enter the serial number: ")
+
+    # Delete the ngfw from the database
+    try:
+        response = mb.delete_ngfw(serial_number=serial_number)
+        print(response)
+    except MTBuilderException as e:
+        print(e)
+        exit()
+
+
 
 def __print_results(headers, results):
 
@@ -344,78 +388,130 @@ def __print_results(headers, results):
 
     print_header(format_string)
     print_data(format_string)
+    print()
 
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser(description="Retrieve and print NGFW routes, interfaces and virtual routers.  Perform on demand fib lookups")
-    parser.add_argument("-i", "--import-ngfws", action="store_true", help="Import Panorama NGFWs (run before anything else if using Panorama)")
-    parser.add_argument("-r", "--refresh", action="store_true", help="Refresh NGFW (no filter will refresh all NGFWs)")
-    parser.add_argument("-s", "--show", type=str, default=None, help="Choose what show: 'routes', 'vrs', 'interfaces','ngfws', 'pan','lldp', 'bgp-peers', 'inventory'")
-    parser.add_argument("-f", "--fib-lookup", type=str, help="Perform FIB Lookup")
-    parser.add_argument("--ha-status", action="store_true", help="Update HA Status")
-    parser.add_argument("--vr", type=str, default=None, help="Virtual Router filter for various commands")
-    parser.add_argument("--pan", type=str, default=None, help="Panorama for various commands")
-    parser.add_argument("--ngfw", type=str, default=None, help="NGFW filter for various commands")
-    parser.add_argument("--dst", type=str, default=None, help="Destination filter for routes")
-    parser.add_argument("--flag", type=str, default=None, help="Comma separated flags for routes")
-    parser.add_argument("--on-demand", action="store_true", help="On demand API call vs querying the database.")
-    parser.add_argument("-t", "--timeout", type=int, default=None, help="Timeout for the API calls.  Default is 5 (seconds)")
     
-    args = parser.parse_args()
-
-    if args.timeout:
-        try:
-            args.timeout = int(args.timeout)
-        except ValueError:
-            print("Timeout must be an integer.")
-            exit()
-            
-        mt.timeout = args.timeout
+    # Subcommands
+    subparsers = parser.add_subparsers(title="Commands", metavar="", dest="command")
 
     try:
-        
-        # If import is selected, import the panorama ngfws
-        if args.import_ngfws:
-            messages = mt.import_panorama_devices()
-            print("\n".join(messages))
+        # try to create the MT Controller object to verify the database is available
+        mt = MTController(db_uri=db_uri, timeout=timeout)
+        mt.get_inventory()
+    except:
+        mt = None
 
-        # If refresh-ngfws is selected, refresh the ngfws
-        if args.refresh:
-            refresh_ngfws(ngfw=args.ngfw)
+    if mt:
+        # Subcommand 'add'
+        parser_add = subparsers.add_parser("add", help="Add Panorama or NGFW to the database")
+        parser_add.add_argument("devicetype", help="Panorama or NGFW")
+        parser_add.add_argument("-H", "--host", type=str, default=None, help="IP address (or fqdn) of Panorama or NGFW (prompt if not included)")
+        parser_add.add_argument("-u", "--username", type=str, default=None, help="Username for Panorama or NGFW (prompt if not included)")
+        parser_add.add_argument("-p", "--password", type=str, default=None, help="Password for Panorama or NGFW (prompt if not included)")
 
-        # If ha-status is selected, update the ha status
-        if args.ha_status:
-            message = mt.update_ha_status()
-            if message:
-                print("\n".join(message))
-            else:
-                print("No HA NGFWs configured.")
+        # Subcommand 'delete'
+        parser_delete = subparsers.add_parser("delete", help="Delete Panorama or NGFW from the database")
+        parser_delete.add_argument("devicetype", help="Panorama or NGFW")
+        parser_delete.add_argument("-s", "--serial", type=str, default=None, help="Serial of device (prompt if not included)")
 
-        # Fib Lookup is selected, perform the fib lookup
-        if args.fib_lookup:
-            test_fib_lookup(ip_address=args.fib_lookup, vr_query=args.vr, ngfw_query=args.ngfw, on_demand=args.on_demand)
+        # Subcommand 'import'
+        parser_import = subparsers.add_parser("import", help="Import Panorama NGFWs (run before anything else if using Panorama)")
+        parser_import.add_argument("--pan", type=str, default=None, help="Which Panorama to import")
 
-        # Show is selected
-        if args.show:
-            if args.show == 'routes':
-                print_routes(virtual_router=args.vr, ngfw=args.ngfw, destination=args.dst, flags=args.flag)
-            elif args.show == 'interfaces':
-                print_interfaces(virtual_router=args.vr, ngfw=args.ngfw, on_demand=args.on_demand)
-            elif args.show == 'vrs':
-                print_virtual_routers(ngfw=args.ngfw)
-            elif args.show == 'ngfws':
-                print_ngfws(panorama=args.pan)
-            elif args.show == 'pan':
-                print_panorama()
-            elif args.show == 'lldp':
-                show_lldp_neighbors(ngfw=args.ngfw, on_demand=args.on_demand)
-            elif args.show == 'bgp-peers':
-                show_bgp_peers(ngfw=args.ngfw, virtual_router=args.vr, on_demand=args.on_demand)
-            elif args.show == 'inventory':
-                print_inventory()
-            else:
-                print ("Invalid show option.  Valid options are 'routes', 'vrs', 'interfaces', 'ngfws', 'pan', 'lldp', 'bgp-peers', 'ivnentory'")
+        # Subcommand 'refresh'
+        parser_refresh = subparsers.add_parser("refresh", help="Refresh NGFW (no filter will refresh all NGFWs)")
+        parser_refresh.add_argument("--ngfw", type=str, default=None, help="Which NGFW to refresh")
 
-    except MTControllerException as e:
-        print(e)
-        exit()
+        # Subcommand 'show'
+        parser_show = subparsers.add_parser("show", help="Show: routes, vrs, interfaces, ngfws, pan, lldp, bgp-peers, inventory")
+        parser_show.add_argument("option", help="routes, vrs, interfaces, ngfws, pan, lldp, bgp-peers, inventory")
+        parser_show.add_argument("--pan", type=str, default=None, help="Filter Panorama (ngfws)")
+        parser_show.add_argument("--ngfw", type=str, default=None, help="Filter NGFW")
+        parser_show.add_argument("--vr", type=str, default=None, help="Filter virtual router")
+        parser_show.add_argument("--dst", type=str, default=None, help="Filter destination (routes)")
+        parser_show.add_argument("--flag", type=str, default=None, help="Filter comma separated flags (routes)")
+        parser_show.add_argument("--on-demand", action="store_true", help="On demand API call vs querying the database")
+
+        # Subcommand 'fib'
+        parser_fib = subparsers.add_parser("fib", help="Perform FIB Lookup")
+        parser_fib.add_argument("address", help="IPv4 address for FIB lookup.")
+        parser_fib.add_argument("--ngfw", type=str, default=None, help="Filter NGFW")
+        parser_fib.add_argument("--vr", type=str, default=None, help="Filter virtual router")
+        parser_fib.add_argument("--on-demand", action="store_true", help="On demand API call vs routing calculation")
+
+        # Subcommand 'update-ha'
+        parser_updateha = subparsers.add_parser("update-ha", help="Update HA Status")
+        parser_updateha.add_argument("--pan", type=str, default=None, help="Filter Panorama")
+        parser_updateha.add_argument("--ngfw", type=str, default=None, help="Filter NGFW")
+    else:
+        # Subcommand 'build-db'
+        parser_build = subparsers.add_parser("build-db", help="Build the database (must be run before anything else)")
+
+    args = parser.parse_args()
+    
+    mb = MTBuilder(db_uri=db_uri)
+
+    if args.command == "build-db":
+        message = mb.build_database()
+        print(message)
+
+    elif args.command == "add":
+        if args.devicetype is None:
+            print("device-type is required.")
+        elif args.devicetype.lower() == "panorama":
+            add_panorama(mb, username=args.username, password=args.password, ip_address=args.host)
+        elif args.devicetype.lower() == "ngfw":
+            add_ngfw(mb, username=args.username, password=args.password, ip_address=args.host)
+
+    elif args.command == "delete":
+        if args.devicetype is None:
+            print("device-type is required (Panorama or NGFW).")
+        elif args.devicetype.lower() == "ngfw":
+            delete_ngfw(mb, serial_number=args.serial)
+        elif args.devicetype.lower() == "panorama":
+            delete_panorama(mb, serial_number=args.serial)
+        else:
+            print("Invalid devicetype.  Valid devicetypes are Panorama or NGFW.")
+
+    elif args.command == "import":
+        print("Importing Panorama connected NGFWs.")
+        messages = mt.import_panorama_devices(pan_filter=args.pan)
+        print("\n".join(messages))
+
+    elif args.command == "refresh":
+        refresh_ngfws(mt, ngfw=args.ngfw)
+
+    elif args.command == "show":
+        if args.option is None:
+            print("show option is required.")
+        if args.option == 'routes':
+            print_routes(mt,virtual_router=args.vr, ngfw=args.ngfw, destination=args.dst, flags=args.flag)
+        elif args.option == 'interfaces':
+            print_interfaces(mt,virtual_router=args.vr, ngfw=args.ngfw, on_demand=args.on_demand)
+        elif args.option == 'vrs':
+            print_virtual_routers(mt,ngfw=args.ngfw)
+        elif args.option == 'ngfws':
+            print_ngfws(mt,panorama=args.pan)
+        elif args.option == 'pan':
+            print_panorama(mt)
+        elif args.option == 'lldp':
+            print_neighbors(mt,ngfw=args.ngfw, on_demand=args.on_demand)
+        elif args.option == 'bgp-peers':
+            print_bgp_peers(mt,ngfw=args.ngfw, virtual_router=args.vr, on_demand=args.on_demand)
+        elif args.option == 'inventory':
+            print_inventory(mt)
+        else:
+            print ("Invalid show option.  Valid options are 'routes', 'vrs', 'interfaces', 'ngfws', 'pan', 'lldp', 'bgp-peers', 'ivnentory'")
+
+    elif args.command == "fib":
+        test_fib_lookup(mt,ip_address=args.address, vr_query=args.vr, ngfw_query=args.ngfw, on_demand=args.on_demand)
+
+    elif args.command == "update-ha":
+        message = mt.update_ha_status()
+        if message:
+            print("\n".join(message))
+        else:
+            print("No HA NGFWs configured.")

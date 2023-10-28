@@ -1,48 +1,33 @@
 # PanOS Master Tshooter
 
-PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information for PanOS NGFWs connected to a Panorama.  The intention is to provide a quick way to get runtime information from NGFWs by sending the commands through Panorama.  Especially useful in an environment with many NGFWs connected to a single Panorama that have a lot of network and interface configurations (such as BGP, multi-vsys, multi-vr etc)
+PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information for PanOS NGFWs connected to a Panorama.  The intention is to provide a quick way to get runtime information from NGFWs by sending the commands through Panorama or directly to an NGFW.  Especially useful in an environment with many NGFWs connected to a single Panorama that have a lot of network and interface configurations (such as BGP, multi-vsys, multi-vr etc)
 
 ## Version Changes
 
-**Multi Panorama Support**
-- Now supports more than one Panorama (or HA pair).  
-- Adding a Panorama using `mt-tools` is now done with the `-p` or `--add-panorama` flags.
+**Command Structure**
+- Each command is now separated with its own flags (show, fib, import etc).  See below for examples.
+- Each command has its own help menu.  Use `--help` to see the options for each command.
 
-**Non-Managed Firewall Support**
-- Firewalls (and HA pairs) now supported with the `mt-tools`, add one with the `-n` or `--add-ngfw` flags.
+**More Information**
+- NGFWs now have refresh time that is updated.
+- Panoramas now show serial numbers.
+- More verbose messaging for errors and success.
 
-**Refresh Changes**
-- Refresh is now performed by `-r` or `--refresh` and accepts only an `--ngfw` which refreshes everything about an NGFW.  This was done since the API commands are not vsys or vr specific.  
-- Note that NOT using the `--ngfw` filter will result in refreshing all NGFWs (Panorama connected or non-managed)
+**Delete Panoramas or NGFWs**
+- Panoramas or NGFWs can now be deleted from the database.  This will remove all associated information.
 
-**Only Show Commands**
-- The `print` command via `-p` or `--print` is no longer available.  
-- `-s` or `--show` now performs the same functionality but with the optional `--on-demand` flag, the information is pulled directly from the device vs the database.  (see supported "On Demand" commands)
-
-**Fib Calculation**
-- Fib lookup is now done through a calculation based on routes and interfaces.  
-- `--on-deman` can be used in conjunction to bypass the calculation and use the API instead.  API functionality can be especially helpful in environments with policy based forwarding.
-
-**Supported On Demand Commands**
-- Some commands now feature 'on-deman' which executes an API command for real time stats:
-  - fib-lookup
-  - show
-    - bgp-peers
-    - interfaces
-    - lldp
-
-- Showing Panorama and NGFW will never be included since they are semi-static entries.  
-- Routes and VRs MAY be included in the future but not likley (use `--refresh` to get new items).
+**Removal of mt-tools**
+- Everything is now run through `mt-cli.py`
+- `build-db` must be run before any other commands are available.
+- If the database is available, command are then available to run and be seen in `--help`.  Note that `build-db` will not be available if the database has been built.
 
 ## Introduction
 
 The `mt-cli.py` script is part of the PanOS Master Tshooter program, a set of tools to retrieve and manage information about NGFW routes, interfaces, virtual routers, and perform on-demand FIB (Forwarding Information Base) lookups. This script is designed to be used in a command-line environment.
 
-The `mt-tools.py` script serves as a helper tool to prepare the database and perform initial setup steps required for the PanOS Master Tshooter project. It should be run before utilizing `mt-cli.py` and ensures that the required infrastructure is in place before using the primary command-line interface.
-
 ## Installation
 
-Install requirements
+Install requirements (venv is optional)
 ```bash
 python -m venv venv
 source venv/bin/activate
@@ -50,20 +35,27 @@ source venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Build the initial database and load Panorama (or non-managed NGFW)
+Build the initial database (must be done before any other commands are available)
 ```bash
-python mt-tools.py -b -p (or -n)
-**Prompts for Panorama info**
+python mt-cli.py build-db
+```
+
+Add a Panorama or NGFW (if hostname, username or password are not provided, user will be prompted)
+```bash
+python mt-cli.py add panorama -H <IP_ADDRESS>
+```
+```bash
+python mt-cli.py add ngfw -H <IP_ADDRESS>
 ```
 
 Import the connected NGFWs (if using Panorama)
 ```bash
-python mt-cli.py -i
+python mt-cli.py import
 ```
 
-Refresh (load initial) NGFW data
+Refresh (load initial) NGFW data (if no ngfw is specified, all NGFWs will be refreshed)
 ```bash
-python mt-cli.py -r
+python mt-cli.py refresh --ngfw <NGFW_NAME>
 ```
 
 ## Considerations
@@ -71,9 +63,10 @@ python mt-cli.py -r
 2. The API Key that is generated for the Panorama and non-managed NGFWs is stored in the SQLite database.  Protect it!
 3. Recommend changing the `db_uri` variable in config.py to an absolute path where you would like it to reside.
 4. MT removes junk such as interfaces without zones or vrs, NGFWs in Panorama but not connected before entering it into the database.  You may find missing interfaces etc when using the print options.
-5. Recommend using a read-only account on Panorama for security purposes.
+5. Recommend using a read-only account on Panorama/NGFWs for security purposes.
 6. Recommend NOT utilizing on central server, intention is to run on workstation or jump host.
-7. Probably some bugs and vulns.  Please report and they will be addressed in the next version.
+7. Currently only supports IPv4, IPv6 support coming soon.
+8. Probably some bugs and vulns.  Please report and they will be addressed in the next version.
 
 ## MT-Tools Usage
 
@@ -82,34 +75,6 @@ To use `mt-tools.py`, open your terminal and navigate to the directory containin
 ```bash
 python mt-tools.py [options]
 ```
-
-## MT-Tools Command-Line Options
-
-Here are the available command-line options for `mt-tools.py`:
-
-- `-b` or `--build-db`: Create an empty database at the URI specified in the configuration.
-- `-p` or `--add-panorama`: Add a Panorama device to the database via a prompt.
-- `-n` or `--add-ngfw`: Add a NGFW device to the database via a prompt.
-
-Some extra flags can be used such as `--ip-address`, `--username` and `--password` to skip the prompt (password not recomended).
-
-## MT-Tools Examples
-
-Here are some example commands to get you started with `mt-tools.py`:
-
-- Build the database (creates an empty database):
-  ```bash
-  python mt-tools.py -b
-  ```
-
-- Add a Panorama device to the database:
-  ```bash
-  python mt-tools.py -p
-  ```
-
-Please note that running `mt-tools.py` is a prerequisite before using `mt-cli.py`. The `--build-db` option initializes the database, and the `--add-panorama` option allows you to add Panorama devices to the database as needed.
-
-Ensure that you have configured the database URI and other relevant settings in `config.py` before running `mt-tools.py`. For detailed configuration instructions, refer to the project documentation or comments within the script itself.
 
 ## MT-CLI Usage
 To use `mt-cli.py`, open your terminal and navigate to the directory containing the script. Then, you can execute various commands with the following syntax:
@@ -120,27 +85,15 @@ python mt-cli.py [options]
 
 ## MT-CLI Command-Line Options
 
-Here are the available command-line options for `mt-cli.py`:
+Here are the available command-line options for `mt-cli.py` (use --help for each command to see more details):
 
-- `-i` or `--import-ngfws`: Import Panorama NGFWs (run before anything else).
-- `-r` or `--refresh`: Refresh the database (use `--ngfw` to select a single NGFW)
-- `-s` or `--show`: Choose what to 'show' on demand. Options include:
-  - `routes`: Show routes (with optional filters for virtual router, NGFW, destination, and flags).
-    - `--dst`: Destination filter for routes.
-    - `--flag`: Comma-separated flags for routes.
-  - `interfaces`: Print interfaces (with optional filters for virtual router and NGFW).
-  - `vrs`: Print virtual routers (with an optional filter for NGFW).
-  - `ngfws`: Print NGFWs (with an optional filter for Panorama).
-  - `pan`: Print Panorama devices.
-  - `lldp`: Show LLDP neighbors.
-  - `bgp-peers`: Show BGP peers (with optional filters for NGFW and virtual router).
-- `-f` or `--fib-lookup`: Perform FIB Lookup (requires specifying an IP address).
-- `--ha-status`: Update HA (High Availability) status for NGFWs and Panorama.
-- `--vr`: Virtual Router filter in various commands.
-- `--ngfw`: NGFW filter for various commands.
-- `--pan`: Panorama filter for various commands.
-- `--on-demand`: Get the infomration directly from the device vs database (runs commands on the firewall for some show commands and fib lookup)
-
+- `add`: Add a Panorama or NGFW to the database.
+- `delete`: Delete a Panorama or NGFW from the database.
+- `import`: Import NGFWs connected to Panorama (run this before other operations if using Panorama).
+- `refresh`: Refresh NGFW information (use with optional filters).
+- `show`: Display routes, virtual routers, interfaces, NGFWs, Panorama details, LLDP neighbors, BGP peers, and inventory.
+- `fib`: Perform FIB Lookup for an IPv4 address.
+- `update-ha`: Update HA (High Availability) status.
 
 ## MT-CLI Examples
 
@@ -148,57 +101,38 @@ Here are some example commands to get you started:
 
 - Import Panorama NGFWs:
   ```bash
-  python mt-cli.py -i
+  python mt-cli.py import
   ```
 
 - Refresh routes for a specific NGFW:
   ```bash
-  python mt-cli.py -r --ngfw <NGFW_NAME>
+  python mt-cli.py refresh --ngfw <NGFW_NAME>
   ```
 
 - Show LLDP neighbors for a specific NGFW on demand:
   ```bash
-  python mt-cli.py -s lldp --ngfw <NGFW_NAME> --on-demand
+  python mt-cli.py show lldp --ngfw <NGFW_NAME> --on-demand
   ```
 
 - Calculate FIB Lookup for an IP address:
   ```bash
-  python mt-cli.py -f <IP_ADDRESS>
+  python mt-cli.py fib <IP_ADDRESS>
   ```
 
 - Run test FIB Lookup for an IP address:
   ```bash
-  python mt-cli.py -f <IP_ADDRESS> --on-demand
+  python mt-cli.py fib <IP_ADDRESS> --on-demand
   ```
 
 - Print routes with specific filters:
   ```bash
-  python mt-cli.py -s routes --vr <VIRTUAL_ROUTER_NAME> --ngfw <NGFW_NAME> --dst <DESTINATION_FILTER> --flag <FLAGS>
+  python mt-cli.py show routes --vr <VIRTUAL_ROUTER_NAME> --ngfw <NGFW_NAME> --dst <DESTINATION_FILTER> --flag <FLAGS>
   ```
 
 - Update HA status for NGFWs:
   ```bash
-  python mt-cli.py --ha-status
+  python mt-cli.py update-ha
   ```
-
-# Future Versions
-
-**Bug Fixes and Enhancements**
-
-- Addressing and resolving any existing bugs and issues to ensure smoother operation.
-
-**IPsec Tunnel Status**
-
-- Added functionality to retrieve and display IPsec tunnel status information for improved network monitoring.
-
-**Web User Interface (WebUI)**
-
-- Development of a user-friendly web-based interface (WebUI) for easier interaction with the PanOS Master Tshooter tools.
-- PSQL database vs sqlite
-
-**General Code Cleanup**
-- General cleanup and less lines of code.
-
 
 # License
 

@@ -32,6 +32,7 @@ class Panorama(Base):
     
     id = Column(Integer, primary_key=True)
     hostname = Column(String)
+    serial_number = Column(String)
     ip_address = Column(String)
     alt_ip = Column(String)
     active = Column(Boolean, default=True)
@@ -51,6 +52,7 @@ class Ngfw(Base):
     active = Column(Boolean, default=True)
     alt_ip = Column(String, default=None)
     api_key = Column(Text, default=None)
+    last_update = Column(String, default=None)
 
     # ForeignKey to associate with Panorama
     panorama_id = Column(Integer, ForeignKey('panorama.id'))
