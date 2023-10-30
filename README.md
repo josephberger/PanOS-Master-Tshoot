@@ -66,7 +66,8 @@ python mt-cli.py refresh --ngfw <NGFW_NAME>
 5. Recommend using a read-only account on Panorama/NGFWs for security purposes.
 6. Recommend NOT utilizing on central server, intention is to run on workstation or jump host.
 7. Currently only supports IPv4, IPv6 support coming soon.
-8. Probably some bugs and vulns.  Please report and they will be addressed in the next version.
+8. For ease of use, most queries are based on hostnames once added/imported.  If you have multiple NGFWs with the same hostname, results may be unexpected (make hostnames unique!).
+9. Probably some bugs and vulns.  Please report and they will be addressed in the next version.
 
 ## MT-Tools Usage
 

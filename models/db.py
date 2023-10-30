@@ -48,6 +48,7 @@ class Ngfw(Base):
     hostname = Column(String)
     serial_number = Column(String)
     ip_address = Column(String)
+    model = Column(String)
     alt_serial = Column(String, default=None)
     active = Column(Boolean, default=True)
     alt_ip = Column(String, default=None)
