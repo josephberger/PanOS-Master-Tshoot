@@ -103,7 +103,7 @@ def print_interfaces(mt,ngfw=None, virtual_router=None, on_demand=False, yes=Fal
                 print(f"Geting interfaces {ngfw_count} NGFWs.  This may take some time...\n")
             else:
                 exit()
-        response = mt.show_interfaces(ngfw=ngfw, virtual_router=virtual_router)
+        response = mt.demand_interfaces(ngfw=ngfw, virtual_router=virtual_router)
     else:
         response = mt.get_interfaces(ngfw=ngfw,virtual_router=virtual_router)
     
@@ -214,7 +214,7 @@ def print_neighbors(mt,ngfw=None, on_demand=False, yes=False):
                 print(f"Testing fib on {ngfw_count} virtual-routers.  This may take some time...\n")
             else:
                 exit()
-        response = mt.show_neighbors(ngfw=ngfw)
+        response = mt.demand_neighbors(ngfw=ngfw)
     else:
         response = mt.get_neighbors(ngfw=ngfw)
     
@@ -258,7 +258,7 @@ def print_bgp_peers(mt,ngfw=None, virtual_router=None, on_demand=False, yes=Fals
                 print(f"Geting bgp-peers for {ngfw_count} NGFWs.  This may take some time...\n")
             else:
                 exit()
-        response = mt.show_bgp_peers(ngfw=ngfw, virtual_router=virtual_router)
+        response = mt.demand_bgp_peers(ngfw=ngfw, virtual_router=virtual_router)
     else:
         response = mt.get_bgp_peers(ngfw=ngfw, virtual_router=virtual_router)
 
@@ -346,7 +346,16 @@ def delete_panorama(mb, serial_number=None):
         print(e)
 
 def delete_ngfw(mb, serial_number=None):
+    """
+    Deletes a Next-Generation Firewall (NGFW) from the database.
 
+    Args:
+        mb (obj): The instance of the MTBuilder class.
+        serial_number (str, optional): The serial number of the NGFW to delete. If not provided, the user will be prompted to enter it.
+
+    Returns:
+        None
+    """
     # get serial number from user input
     if serial_number is None:
         serial_number = input("Enter the serial number: ")
@@ -410,6 +419,9 @@ if __name__ == '__main__':
         mt = None
 
     if mt:
+        # subcommand 'inventory'
+        parser_inv = subparsers.add_parser("inventory", help="Display the database inventory metrics")
+
         # subcommand 'add'
         parser_add = subparsers.add_parser("add", help="Add Panorama or NGFW to the database")
         parser_add.add_argument("platform", help="Panorama or NGFW")
@@ -431,10 +443,11 @@ if __name__ == '__main__':
             # subcommand 'refresh'
             parser_refresh = subparsers.add_parser("refresh", help="Refresh NGFW (no filter will refresh all NGFWs)")
             parser_refresh.add_argument("--ngfw", type=str, default=None, help="Which NGFW to refresh")
+            parser_refresh.add_argument("--yes", action="store_true", help="Do not prompt for on-demand confirmation")
 
             # subcommand 'show'
-            parser_show = subparsers.add_parser("show", help="Show: routes, vrs, interfaces, ngfws, pan, lldp, bgp-peers, inventory")
-            parser_show.add_argument("option", help="routes, vrs, interfaces, ngfws, pan, lldp, bgp-peers, inventory")
+            parser_show = subparsers.add_parser("show", help="Show: routes, vrs, interfaces, ngfws, pan, lldp, bgp-peers")
+            parser_show.add_argument("option", help="routes, vrs, interfaces, ngfws, pan, lldp, bgp-peers")
             parser_show.add_argument("--pan", type=str, default=None, help="Filter Panorama (ngfws)")
             parser_show.add_argument("--ngfw", type=str, default=None, help="Filter NGFW")
             parser_show.add_argument("--vr", type=str, default=None, help="Filter virtual router")
@@ -469,6 +482,9 @@ if __name__ == '__main__':
         print(message)
         print(f"Database located at {os.path.abspath(db_uri)}")
 
+    elif args.command == "inventory":
+        print_inventory(mt)
+
     elif args.command == "add":
         if args.platform.lower() == "panorama":
             add_panorama(mb, username=args.username, password=args.password, ip_address=args.host)
@@ -486,7 +502,11 @@ if __name__ == '__main__':
             print("Invalid platform.  Valid platform are Panorama or NGFW.")
 
     elif args.command == "import":
-        print("Importing Panorama connected NGFWs.")
+        if args.pan:
+            print(f"Importing NGFWs managed by {args.pan}.")
+        else:
+            print("Importing NGFWs managed by all Panoramas.")
+
         messages = mt.import_panorama_devices(pan_filter=args.pan)
         print("\n".join(messages))
 
@@ -508,10 +528,8 @@ if __name__ == '__main__':
             print_neighbors(mt,ngfw=args.ngfw, on_demand=args.on_demand, yes=args.yes)
         elif args.option == 'bgp-peers':
             print_bgp_peers(mt,ngfw=args.ngfw, virtual_router=args.vr, on_demand=args.on_demand, yes=args.yes)
-        elif args.option == 'inventory':
-            print_inventory(mt)
         else:
-            print ("Invalid show option.  Valid options are 'routes', 'vrs', 'interfaces', 'ngfws', 'pan', 'lldp', 'bgp-peers', 'ivnentory'")
+            print ("Invalid show option.  Valid options are 'routes', 'vrs', 'interfaces', 'ngfws', 'pan', 'lldp', 'bgp-peers'")
 
     elif args.command == "fib":
         print_fib(mt, ip_address=args.address, virtual_router=args.vr, ngfw=args.ngfw, on_demand=args.on_demand, yes=args.yes)
