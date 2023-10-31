@@ -74,8 +74,8 @@ class MTpanorama:
         Raises:
             MTpanoramaException: If there is an error retrieving the high availability state.
 
-        Returns:
-        - A dictionary containing the high availability state of the device.
+        Returns: 
+            dict: A dictionary containing the high availability state of the device.
         """  
         self.xapi = pan.xapi.PanXapi(api_key=self.panorama.api_key, hostname=self.panorama.ip_address)
 
@@ -174,11 +174,11 @@ class MTngfw:
             MTngfwException: If there is an error retrieving the LLDP neighbor information.
 
         Returns:
-            A list of dictionaries containing the following keys:
-            - local_interface: The name of the local interface.
-            - remote_interface_id: The ID of the remote interface.
-            - remote_interface_description: The description of the remote interface.
-            - remote_hostname: The hostname of the remote device.
+            list: A list of dictionaries containing the following keys:
+                - local_interface: The name of the local interface.
+                - remote_interface_id: The ID of the remote interface.
+                - remote_interface_description: The description of the remote interface.
+                - remote_hostname: The hostname of the remote device.
         """
         # for each ngfw in ngfws, set the serial of self.xapi to ngfw.serial_number and show lldp neighbors on the xapi object
         try:
@@ -224,16 +224,16 @@ class MTngfw:
             MTngfwException: If there is an error retrieving the BGP peer information.
 
         Returns:
-            A list of dictionaries containing the following keys:
-            - virtual_router: The virtual router the peer is configured on.
-            - peer_name: The name of the peer.
-            - peer_group: The peer group the peer is configured in.
-            - peer_router_id: The router ID of the peer.
-            - remote_as: The remote AS of the peer.
-            - status: The status of the peer.
-            - status_duration: The duration of the peer status.
-            - peer_address: The IP address of the peer.
-            - local_address: The local IP address of the peer.
+            list: A list of dictionaries containing the following keys:
+                - virtual_router: The virtual router the peer is configured on.
+                - peer_name: The name of the peer.
+                - peer_group: The peer group the peer is configured in.
+                - peer_router_id: The router ID of the peer.
+                - remote_as: The remote AS of the peer.
+                - status: The status of the peer.
+                - status_duration: The duration of the peer status.
+                - peer_address: The IP address of the peer.
+                - local_address: The local IP address of the peer.
         """
 
         # for each ngfw in ngfw_list, set the serial of self.xapi to ngfw.serial_number and show lldp neighbors on the xapi object
@@ -272,16 +272,17 @@ class MTngfw:
         """
         Returns a list of dictionaries containing information about interfaces from the API.
 
-        Returns:
-        list: A list of dictionaries containing the following keys:
-            - name: The name of the interface.
-            - tag: The tag of the interface.
-            - vsys: The vsys of the interface.
-            - ip: The IP address of the interface.
-            - zone: The zone of the interface.
-            - virtual_router: The ID of the virtual router based on name and ngfw.
         Raises:
-        MTngfwException: If there is an error with the API call or no interfaces are found.
+            MTngfwException: If there is an error with the API call or no interfaces are found.
+
+        Returns:
+            list: A list of dictionaries containing the following keys:
+                - name: The name of the interface.
+                - tag: The tag of the interface.
+                - vsys: The vsys of the interface.
+                - ip: The IP address of the interface.
+                - zone: The zone of the interface.
+                - virtual_router: The ID of the virtual router based on name and ngfw.
         """
         
         try:  
@@ -326,7 +327,7 @@ class MTngfw:
             MTngfwException: If there is an error with the API call or no routes are found.
 
         Returns:
-            - list of dictionaries containing route information
+            list: dictionaries containing route information
         """
 
         try:
@@ -351,7 +352,7 @@ class MTngfw:
             MTngfwException: If there is an error retrieving the high availability status.
 
         Returns:
-            - A dictionary containing the high availability status of the device.
+            dict: Containing the high availability status of the device.
         """
         try:
             self.xapi.op("<show><high-availability><state></state></high-availability></show>")

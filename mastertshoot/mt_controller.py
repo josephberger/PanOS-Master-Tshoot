@@ -296,7 +296,8 @@ class MTBuilder:
         delete_items = [routes, interfaces, virtual_routers, bgp_peers, neighbors]
 
         for item in delete_items:
-            session.delete(item)
+            for i in item:
+                session.delete(i)
         
         # delete the ngfw
         try:

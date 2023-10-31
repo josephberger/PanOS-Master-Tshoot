@@ -443,7 +443,7 @@ if __name__ == '__main__':
             # subcommand 'refresh'
             parser_refresh = subparsers.add_parser("refresh", help="Refresh NGFW (no filter will refresh all NGFWs)")
             parser_refresh.add_argument("--ngfw", type=str, default=None, help="Which NGFW to refresh")
-            parser_refresh.add_argument("--yes", action="store_true", help="Do not prompt for on-demand confirmation")
+            parser_refresh.add_argument("--yes", action="store_true", help="Do not prompt for confirmation")
 
             # subcommand 'show'
             parser_show = subparsers.add_parser("show", help="Show: routes, vrs, interfaces, ngfws, pans, lldp, bgp-peers")
@@ -511,7 +511,7 @@ if __name__ == '__main__':
         print("\n".join(messages))
 
     elif args.command == "refresh":
-        refresh_ngfws(mt, ngfw=args.ngfw)
+        refresh_ngfws(mt, ngfw=args.ngfw, yes=args.yes)
 
     elif args.command == "show":
         if args.option == 'routes':
