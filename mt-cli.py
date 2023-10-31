@@ -26,7 +26,7 @@ from getpass import getpass
 import os
 
 from config import db_uri, timeout
-from mt_controller import MTController, MTControllerException, MTBuilder, MTBuilderException
+from mastertshoot.mt_controller import MTController, MTControllerException, MTBuilder, MTBuilderException
 
 
 def print_inventory(mt):
@@ -277,12 +277,12 @@ def print_bgp_peers(mt,ngfw=None, virtual_router=None, on_demand=False, yes=Fals
 
     __print_results(headers, response['results'], response['message'])
 
-def refresh_ngfws(mt,ngfw=None):
+def refresh_ngfws(mt,ngfw=None, yes=False):
 
     if not ngfw:
         ngfw_count = int(mt.get_inventory()['NGFWs'])
 
-        if ngfw_count > 1:
+        if ngfw_count > 1 and yes is False:
 
             choice = input(f"Are you sure you want to refresh all {ngfw_count} NGFWs for a total of {4*ngfw_count} API calls? (y/n): ")
 
@@ -436,7 +436,7 @@ if __name__ == '__main__':
             parser_delete.add_argument("-s", "--serial", type=str, default=None, help="Serial of device (prompt if not included)")
 
             # subcommand 'import'
-            parser_import = subparsers.add_parser("import", help="Import Panorama NGFWs (run before anything else if using Panorama)")
+            parser_import = subparsers.add_parser("import", help="Import Panorama NGFWs (run before anything else if using Panoramas only)")
             parser_import.add_argument("--pan", type=str, default=None, help="Which Panorama to import")
 
         if inventory['NGFWs'] > 0:
@@ -446,7 +446,7 @@ if __name__ == '__main__':
             parser_refresh.add_argument("--yes", action="store_true", help="Do not prompt for on-demand confirmation")
 
             # subcommand 'show'
-            parser_show = subparsers.add_parser("show", help="Show: routes, vrs, interfaces, ngfws, pan, lldp, bgp-peers")
+            parser_show = subparsers.add_parser("show", help="Show: routes, vrs, interfaces, ngfws, pans, lldp, bgp-peers")
             parser_show.add_argument("option", help="routes, vrs, interfaces, ngfws, pan, lldp, bgp-peers")
             parser_show.add_argument("--pan", type=str, default=None, help="Filter Panorama (ngfws)")
             parser_show.add_argument("--ngfw", type=str, default=None, help="Filter NGFW")
@@ -522,14 +522,14 @@ if __name__ == '__main__':
             print_virtual_routers(mt,ngfw=args.ngfw, virtual_router=args.vr)
         elif args.option == 'ngfws':
             print_ngfws(mt,panorama=args.pan)
-        elif args.option == 'pan':
+        elif args.option == 'pans':
             print_panorama(mt)
         elif args.option == 'lldp':
             print_neighbors(mt,ngfw=args.ngfw, on_demand=args.on_demand, yes=args.yes)
         elif args.option == 'bgp-peers':
             print_bgp_peers(mt,ngfw=args.ngfw, virtual_router=args.vr, on_demand=args.on_demand, yes=args.yes)
         else:
-            print ("Invalid show option.  Valid options are 'routes', 'vrs', 'interfaces', 'ngfws', 'pan', 'lldp', 'bgp-peers'")
+            print ("Invalid show option.  Valid options are 'routes', 'vrs', 'interfaces', 'ngfws', 'pans', 'lldp', 'bgp-peers'")
 
     elif args.command == "fib":
         print_fib(mt, ip_address=args.address, virtual_router=args.vr, ngfw=args.ngfw, on_demand=args.on_demand, yes=args.yes)

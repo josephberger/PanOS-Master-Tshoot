@@ -1,12 +1,13 @@
 # PanOS Master Tshooter
 
-PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information for PanOS NGFWs connected to a Panorama.  The intention is to provide a quick way to get runtime information from NGFWs by sending the commands through Panorama or directly to an NGFW.  Especially useful in an environment with many NGFWs connected to a single Panorama that have a lot of network and interface configurations (such as BGP, multi-vsys, multi-vr etc)
+PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information for PanOS NGFWs connected to a Panorama.  The intention is to provide a quick way to get runtime information from NGFWs by sending the commands through Panorama or directly to an NGFW.  Especially useful in an environment with many NGFWs connected to a single Panorama that have a lot of network and interface configurations (such as BGP, multi-vsys, multi-vr etc).  Not intended to replace any of the Panorama or NGFW functionality, but to provide a quick way to get information without having to log into each NGFW individually.
 
 ## Version Changes
 
 **Command Structure**
 - Each command is now separated with its own flags (show, fib, import etc).  See below for examples.
 - Each command has its own help menu.  Use `--help` to see the options for each command.
+- Certain commands are not available depending on the state of the database.  For example, `show` is not available unless there are NGFWs present.
 
 **More Information**
 - NGFWs now have refresh time that is updated.
@@ -66,7 +67,7 @@ python mt-cli.py refresh --ngfw <NGFW_NAME>
 5. Recommend using a read-only account on Panorama/NGFWs for security purposes.
 6. Recommend NOT utilizing on central server, intention is to run on workstation or jump host.
 7. Currently only supports IPv4, IPv6 support coming soon.
-8. For ease of use, most queries are based on hostnames once added/imported.  If you have multiple NGFWs with the same hostname, results may be unexpected (make hostnames unique!).
+8. For ease of use, most queries are based on hostnames once added/imported.  If you have multiple NGFWs with the same hostname, MT will add a `-1` to the back of the hostname.
 9. Probably some bugs and vulns.  Please report and they will be addressed in the next version.
 
 ## MT-Tools Usage
@@ -88,11 +89,13 @@ python mt-cli.py [options]
 
 Here are the available command-line options for `mt-cli.py` (use --help for each command to see more details):
 
+- `build-db`: Build the initial database. Must be run before any other commands are available if no db is present.
+- `inventory`: Print inventory counts of the database.
 - `add`: Add a Panorama or NGFW to the database.
 - `delete`: Delete a Panorama or NGFW from the database.
 - `import`: Import NGFWs connected to Panorama (run this before other operations if using Panorama).
 - `refresh`: Refresh NGFW information (use with optional filters).
-- `show`: Display routes, virtual routers, interfaces, NGFWs, Panorama details, LLDP neighbors, BGP peers, and inventory.
+- `show`: Display routes, virtual routers, interfaces, NGFWs, Panorama details, LLDP neighbors, BGP peers.
 - `fib`: Perform FIB Lookup for an IPv4 address.
 - `update-ha`: Update HA (High Availability) status.
 

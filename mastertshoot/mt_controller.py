@@ -30,6 +30,10 @@ from sqlalchemy.orm import sessionmaker
 
 from models import Base, Ngfw, Route, VirtualRouter, Interface, Panorama, Neighbor, BGPPeer
 
+from .mt_devices import MTpanorama, MTngfw, MTpanoramaException, MTngfwException
+
+
+
 class MTBuilderException(Exception):
     pass
 
@@ -40,7 +44,7 @@ class MTBuilder:
         try:
             self.timeout = int(timeout)
         except:
-            raise MTBuilderException(f"timeout must be an integer")
+            raise MTBuilderException(f"Timeout must be an integer")
 
     def build_database(self) -> str:
         """
@@ -54,7 +58,7 @@ class MTBuilder:
             # create the tables in the database
             Base.metadata.create_all(engine)
 
-            return "Empty database successfully created!"
+            return "Empty database successfully created"
         except Exception as e:
             return "Issue connecting to the database.  Error: {e}"
         
@@ -69,18 +73,18 @@ class MTBuilder:
             Session = sessionmaker(bind=engine)
             session = Session()
         except Exception as e:
-            raise MTBuilderException(f"Error: database communication with {self.db_uri}.")
+            raise MTBuilderException(f"Database communication issue with {self.db_uri}")
 
         # query the database for all panoramas
         try:
             pan_list = session.query(Panorama).all()
         except Exception as e:
-            raise MTBuilderException(f"Error: database communication with {self.db_uri}.")
+            raise MTBuilderException(f"Database communication issue with {self.db_uri}")
 
         # if the panorama is already in the database
         for p in pan_list:
             if p.ip_address == ip_address:
-                raise MTBuilderException(f"Error: Panorama {ip_address} already in database.")
+                raise MTBuilderException(f"Panorama {ip_address} already in database")
 
         try:
             xapi = pan.xapi.PanXapi(api_username=username, api_password=password, hostname=ip_address)
@@ -91,9 +95,17 @@ class MTBuilder:
             system_info = xmltodict.parse('<root>' + xapi.xml_result() + '</root>')['root']
 
             if 'system-mode' not in system_info['system']:
-                raise MTBuilderException(f"Error: Device at {ip_address} is not a Panorama.")
+                raise MTBuilderException(f"Device at {ip_address} is not a Panorama")
 
             serial = system_info['system']['serial']
+
+            hostname = system_info['system']['hostname']
+
+            # if hostname is in the database, append -1 to the hostname
+            for p in pan_list:
+                if hostname == p.hostname:
+                    hostname = hostname + "-1"
+                    break
 
             # show the HA info
             xapi.op("<show><high-availability><state></state></high-availability></show>")
@@ -118,13 +130,13 @@ class MTBuilder:
 
             raise MTBuilderException(f"{e}")
         
-        new_panorama = Panorama(hostname=system_info['system']['hostname'], serial_number=serial, ip_address=ip_address, alt_ip=alt_ip, active=active, api_key=xapi.api_key)
+        new_panorama = Panorama(hostname=hostname, serial_number=serial, ip_address=ip_address, alt_ip=alt_ip, active=active, api_key=xapi.api_key)
 
         session.add(new_panorama)
 
         session.commit()
 
-        return f"{system_info['system']['hostname']} successfully added to database."
+        return f"{system_info['system']['hostname']} successfully added to database"
     
     def add_ngfw(self, ip_address, username, password) -> str:
         """
@@ -137,7 +149,7 @@ class MTBuilder:
             Session = sessionmaker(bind=engine)
             session = Session()
         except Exception as e:
-            raise MTBuilderException(f"Error: database communication with {self.db_uri}.")
+            raise MTBuilderException(f"Database communication issue with {self.db_uri}")
 
         # create list of serial numbers in the database
         serial_numbers = []
@@ -145,7 +157,7 @@ class MTBuilder:
         try:
             ngfw_list = session.query(Ngfw).all()
         except Exception as e:
-            raise MTBuilderException(f"Error: database communication with {self.db_uri}.")
+            raise MTBuilderException(f"Database communication issue with {self.db_uri}")
 
         for n in ngfw_list:
             serial_numbers.append(n.serial_number)
@@ -160,14 +172,22 @@ class MTBuilder:
             
             # if PA- not in model, exit
             if 'PA-' not in device_info['system']['model']:
-                raise MTBuilderException(f"Error: Device at {ip_address} is not a NGFW.")
+                raise MTBuilderException(f"Device at {ip_address} is not a NGFW.")
 
             # show the HA info
             xapi.op("<show><high-availability><state></state></high-availability></show>")
             ha_info = xmltodict.parse('<root>' + xapi.xml_result() + '</root>')['root']
 
+            hostname = device_info['system']['hostname']
+
+            # if hostname is in the database, append -1 to the hostname
+            for n in ngfw_list:
+                if hostname == n.hostname:
+                    hostname = hostname + "-1"
+                    break
+
             ngfw_info = {
-                'hostname': device_info['system']['hostname'],
+                'hostname': hostname,
                 'serial_number': device_info['system']['serial'],
                 'ip_address': ip_address,
                 'model': device_info['system']['model'],
@@ -177,7 +197,7 @@ class MTBuilder:
 
             # if serial number is not in serial_numbers, add to the database
             if ngfw_info['serial_number'] in serial_numbers:
-                raise MTBuilderException(f"Error: NGFW {ngfw_info['hostname']} {ngfw_info['serial_number']} already in database.")
+                raise MTBuilderException(f"NGFW {ngfw_info['hostname']} {ngfw_info['serial_number']} already in database")
 
             # determine HA status
             if ha_info['enabled'] == 'yes':
@@ -220,10 +240,10 @@ class MTBuilder:
             session = Session()
             panorama = session.query(Panorama).filter(Panorama.serial_number == serial_number).first()
         except Exception as e:
-            raise MTBuilderException(f"Issue communicating with database {self.db_uri}.")
+            raise MTBuilderException(f"Database communication issue with {self.db_uri}")
         
         if not panorama:
-            raise MTBuilderException(f"Panorama {serial_number} not found in database.")
+            raise MTBuilderException(f"Panorama {serial_number} not found in database")
         
         # query the database for all ngfws associated with the panorama
         ngfws = session.query(Ngfw).join(Ngfw.panorama).filter(Panorama.serial_number == serial_number).all()
@@ -239,7 +259,7 @@ class MTBuilder:
         try:
             session.delete(panorama)
         except Exception as e:
-            raise MTBuilderException(f"Error: {serial_number} not deleted from database.")
+            raise MTBuilderException(f"Panorama {serial_number} not deleted from database")
         
         session.commit()
 
@@ -259,10 +279,10 @@ class MTBuilder:
             session = Session()
             ngfw = session.query(Ngfw).filter(Ngfw.serial_number == serial_number).first()
         except Exception as e:
-            raise MTBuilderException(f"Erorr: communicating with database {self.db_uri}.")
+            raise MTBuilderException(f"Database communication issue with {self.db_uri}")
         
         if not ngfw:
-            raise MTBuilderException(f"Error: NGFW {serial_number} not found in database.")
+            raise MTBuilderException(f"NGFW {serial_number} not found in database")
         
         # query the database for all routes, interfaces, virtual routers, bgp peers and neighbors associated with the ngfw
         routes = session.query(Route).join(Route.virtual_router).join(VirtualRouter.ngfw).filter(Ngfw.serial_number == serial_number).all()
@@ -282,7 +302,7 @@ class MTBuilder:
         try:
             session.delete(ngfw)
         except Exception as e:
-            raise MTBuilderException(f"Error: NGFW {serial_number} not deleted from database.")
+            raise MTBuilderException(f"NGFW {serial_number} not deleted from database")
         
         session.commit()
 
@@ -297,7 +317,8 @@ class MTController:
 
         # verify db_uri is present
         if not db_uri:
-            raise MTControllerException("No db_uri provided")
+            raise MTControllerException("No 'db_uri' provided")
+        
         self.db_uri = db_uri
 
         try:
@@ -305,32 +326,12 @@ class MTController:
             Session = sessionmaker(bind=engine)
             self.session = Session()
         except Exception as e:
-            raise MTControllerException(f"Issue communicating with database {db_uri}.  Error: {str(e)}")
+            raise MTControllerException(f"Issue communicating with database {db_uri}")
 
-        self.timeout = timeout
-
-    # def __set_xapi(self, ngfw) -> None:
-    #     """
-    #     This method sets the xapi object based on the ngfw
-    #     """
-
-    #     # if the ngfw has no panorama, build the appropriate xapi object
-    #     if not ngfw.panorama:
-    #         if ngfw.active:
-    #             self.xapi = pan.xapi.PanXapi(api_key=ngfw.api_key, hostname=ngfw.ip_address)
-    #         else:
-    #             self.xapi = pan.xapi.PanXapi(api_key=ngfw.api_key, hostname=ngfw.alt_ip)
-
-    #     else:
-    #         # if ngfw active set the serial number to the xapi object else set the alt_serial
-    #         self.xapi = pan.xapi.PanXapi(api_key=ngfw.panorama.api_key, hostname=ngfw.panorama.ip_address)
-
-    #         if ngfw.active:
-    #             self.xapi.serial =  ngfw.serial_number
-    #         else:
-    #             self.xapi.serial =  ngfw.alt_serial
-
-    #     self.xapi.timeout = self.timeout
+        try:
+            self.timeout = int(timeout)
+        except:
+            raise MTControllerException(f"'timeout' must be an integer")
 
     def get_inventory(self) -> dict:
         """
@@ -365,7 +366,7 @@ class MTController:
         panorama_list = pan_query.all()
 
         if not panorama_list:
-            message.append("No Panoramas in database.")
+            message.append("No Panoramas in database")
             return message
 
         serial_numbers = [] # for checking if serial number is in database
@@ -390,12 +391,12 @@ class MTController:
 
                 # if serial number is not in serial_numbers, add to the database
                 if d['serial'] in serial_numbers:
-                    message.append(f"{d['hostname']} {d['serial']} already in database.  Skipping...")
+                    message.append(f"{d['hostname']} {d['serial']} already in database - skipping...")
                     continue
                 
                 # if connected is not yes continue
                 if d['connected'] != 'yes':
-                    message.append(f"{d['hostname']} {d['serial']} not connected.  Skipping...")
+                    message.append(f"{d['hostname']} {d['serial']} not connected - skipping...")
                     continue
                 
                 ngfw_info = {
@@ -413,7 +414,7 @@ class MTController:
                         ngfw_info['active'] = True
                         ngfw_info['alt_serial'] = d['ha']['peer']['serial'] 
                     else:
-                        message.append(f"{ngfw_info['hostname']} {ngfw_info['serial_number']} is not active.  Skipping...")
+                        message.append(f"{ngfw_info['hostname']} {ngfw_info['serial_number']} is not active - skipping...")
                         continue
                 else:
                     ngfw_info['active'] = True
@@ -447,7 +448,7 @@ class MTController:
         ngfw_list = ngfw_query.all()
 
         if not ngfw_list:
-            message.append("No ngfws found in database.  Exiting...")
+            message.append("No ngfws found in database")
             return message
 
         # for each ngfw
@@ -465,7 +466,7 @@ class MTController:
             try:
                 interfaces = mtd.show_interfaces()
             except MTngfwException:
-                message.append(f"{n.hostname} has not interfaces assigned to a vr and zone.  Skipping...")
+                message.append(f"{n.hostname} has no interfaces assigned to a vr and zone - skipping...")
                 continue
 
             # create a query for interfaces, routes, virtual routers, and ngfws
@@ -623,7 +624,7 @@ class MTController:
         routes = query.all()
 
         if not routes:
-            response['message'].append("No routes found.")
+            response['message'].append("No routes found")
             return response
 
         formatted_routes = []
@@ -683,7 +684,7 @@ class MTController:
         interfaces = query.all()
 
         if not interfaces:
-            response['message'].append("No interfaces found.")
+            response['message'].append("No interfaces found")
             return response
             
         formatted_interfaces = []
@@ -723,7 +724,7 @@ class MTController:
         bgp_peers = query.all()
 
         if not bgp_peers:
-            response['message'].append("No BGP peers found.")
+            response['message'].append("No BGP peers found")
             return response
         
         formatted_bgp_peers = []
@@ -766,7 +767,7 @@ class MTController:
         vr_list = query.all()
 
         if not vr_list:
-            response['message'].append("No virtual routers found.")
+            response['message'].append("No virtual routers found")
             return response
         
         formatted_virtual_routers = []
@@ -856,7 +857,7 @@ class MTController:
                 formatted_neighbors.append(neighbor_dict)
             response['results'] = formatted_neighbors
         else:
-            response['message'].append("No neighbors found.")
+            response['message'].append("No neighbors found")
 
         return response
 
@@ -886,7 +887,7 @@ class MTController:
             
             response['results'] = formatted_panorama
         else:
-            response['message'].append("No panoramas found.")
+            response['message'].append("No panoramas found")
 
         return response
     
@@ -1012,7 +1013,7 @@ class MTController:
         virtual_routers = query.all()
         
         if not virtual_routers:
-            response['message'].append("No virtual routers found.")
+            response['message'].append("No virtual routers found")
             return response
 
         formatted_results = []
@@ -1082,7 +1083,7 @@ class MTController:
         ngfw_list = query.all()
 
         if not ngfw_list:
-            response['message'] = ["No NGFWs found to check interfaces."]
+            response['message'] = ["No NGFWs found to check interfaces"]
             return response
         
         formatted_interfaces = []
@@ -1098,7 +1099,12 @@ class MTController:
                 response['message'].append(str(e))
                 continue
 
-            formatted_interfaces.extend(results)
+            if virtual_router:
+                for r in results:
+                    if r['virtual_router'] == virtual_router:
+                        formatted_interfaces.append(r)
+            else:
+                formatted_interfaces.extend(results)
 
         response['results'] = formatted_interfaces
         
@@ -1119,7 +1125,7 @@ class MTController:
         ngfw_list = query.all()
 
         if not ngfw_list:
-            response['message'].append("No NGFWs found to check neighbors.")
+            response['message'].append("No NGFWs found to check neighbors")
             return response
         
         formatted_lldp_neighbors = []
@@ -1158,7 +1164,7 @@ class MTController:
         ngfw_list = query.all()
 
         if not ngfw_list:
-            response['message'] = ["No NGFWs found to check BGP."]
+            response['message'] = ["No NGFWs found to check bgp-peers"]
             return response
         
         formatted_bgp_peers = []
@@ -1254,283 +1260,3 @@ class MTController:
         self.session.commit()
 
         return message
-class MTpanoramaException(Exception):
-    pass
-
-class MTpanorama:
-    def __init__(self, panorama, timeout=5) -> None:
-        
-        self.panorama = panorama
-
-        self.timeout = timeout
-
-        self.xapi = None
-        
-        self.__set_xapi()
-
-    def __set_xapi(self) -> None:
-        """
-        This method sets the xapi object based on the panorama
-        """
-
-        # if the panorama has an alt-ip
-        if self.panorama.alt_ip:
-            # if the panorama is active, build the appropriate xapi object
-            if self.panorama.active:
-                self.xapi = pan.xapi.PanXapi(api_key=self.panorama.api_key, hostname=self.panorama.ip_address)
-            else:
-                self.xapi = pan.xapi.PanXapi(api_key=self.panorama.api_key, hostname=self.panorama.alt_ip)
-        
-        # if the panorama has no alt-ip
-        else:
-            self.xapi = pan.xapi.PanXapi(api_key=self.panorama.api_key, hostname=self.panorama.ip_address)
-
-        # ensure serial is none
-        self.xapi.serial = None
-
-        self.xapi.timeout = self.timeout
-    
-    def show_ha_state(self) -> dict:
-        
-        self.xapi = pan.xapi.PanXapi(api_key=self.panorama.api_key, hostname=self.panorama.ip_address)
-
-        try:
-            self.xapi.op("<show><high-availability><state></state></high-availability></show>")
-            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']
-        except pan.xapi.PanXapiError as e:
-            raise MTpanoramaException(f"Panorama {self.panorama.hostname} {e}")
-        except TypeError:
-            raise MTpanoramaException(f"Panorama {self.panorama.hostname} is not ha")
-        except KeyError:
-            raise MTpanoramaException(f"Panorama {self.panorama.hostname} is not ha")
-        
-        return results
-    
-    def show_devices(self) -> dict:
-
-        # show devices all on the xapi object
-        try:
-            self.xapi.op("<show><devices><all></all></devices></show>")
-            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['devices']
-        except pan.xapi.PanXapiError as e:
-            raise MTpanoramaException(f"Panorama {self.panorama.hostname} {e}")
-        except TypeError:
-            raise MTpanoramaException(f"Panorama {self.panorama.hostname} no devices found.")
-        except KeyError:
-            raise MTpanoramaException(f"Panorama {self.panorama.hostname} no devices found.")
-        
-        if results:
-            results = results['entry']
-        else:
-            raise MTpanoramaException(f"Panorama {self.panorama.hostname} no devices found.")
-        
-        # if devices is not a list, make it a list
-        if type(results) != list:
-            results = [results]
-
-        return results
-    
-class MTngfwException(Exception):
-    pass
-
-class MTngfw:
-    def __init__(self, ngfw, timeout=5) -> None:
-        
-        self.ngfw = ngfw
-
-        self.timeout = timeout
-
-        self.xapi = None
-        
-        self.__set_xapi()
-
-    def __set_xapi(self) -> None:
-        """
-        This method sets the xapi object based on the ngfw
-        """
-
-        # if the ngfw has no panorama, build the appropriate xapi object
-        if not self.ngfw.panorama:
-            if self.ngfw.active:
-                self.xapi = pan.xapi.PanXapi(api_key=self.ngfw.api_key, hostname=self.ngfw.ip_address)
-            else:
-                self.xapi = pan.xapi.PanXapi(api_key=self.ngfw.api_key, hostname=self.ngfw.alt_ip)
-
-        else:
-            # if ngfw active set the serial number to the xapi object else set the alt_serial
-            self.xapi = pan.xapi.PanXapi(api_key=self.ngfw.panorama.api_key, hostname=self.ngfw.panorama.ip_address)
-
-            if self.ngfw.active:
-                self.xapi.serial =  self.ngfw.serial_number
-            else:
-                self.xapi.serial =  self.ngfw.alt_serial
-
-        self.xapi.timeout = self.timeout
-
-    def show_neighbors(self) -> list:
-        """
-        Returns neighbors from API
-        """
-        # for each ngfw in ngfws, set the serial of self.xapi to ngfw.serial_number and show lldp neighbors on the xapi object
-        
-        try:
-            self.xapi.op("<show><lldp><neighbors>all</neighbors></lldp></show>")
-            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['entry']
-        except pan.xapi.PanXapiError as e:
-            raise MTngfwException(f"{self.ngfw.hostname}: {e}")
-        except TypeError:
-            raise MTngfwException(f"{self.ngfw.hostname} No neighbors found.")
-
-        # if results is not a list, make it a list
-        if type(results) != list:
-            results = [results]
-
-        response = []
-
-        # for each result, build a dictionary and append to the formatted_results list
-        for r in results:
-            
-            if r['neighbors']:
-                lldp_neighbors = r['neighbors']['entry']
-            else:
-                continue
-
-            if type(lldp_neighbors) != list:
-                lldp_neighbors = [lldp_neighbors]
-            
-            for lldp_n in lldp_neighbors:
-                response.append({
-                    'local_interface': r['@name'] or "None",
-                    'remote_interface_id': lldp_n['port-id'] or "None",
-                    'remote_interface_description': lldp_n['port-description'] or "",
-                    'remote_hostname': lldp_n['system-name'] or "None",
-                })
-        
-        return response
-    
-    def show_bgp_peers(self) -> list:
-        """
-        Returns BGP peers from API
-        """
-
-        # for each ngfw in ngfw_list, set the serial of self.xapi to ngfw.serial_number and show lldp neighbors on the xapi object
-
-        try:
-            self.xapi.op("<show><routing><protocol><bgp><peer></peer></bgp></protocol></routing></show>")
-            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['entry']
-        except pan.xapi.PanXapiError as e:
-            raise MTngfwException(f"{self.ngfw.hostname} {e}")
-        except TypeError:
-            raise MTngfwException(f"{self.ngfw.hostname} No BGP peers found.")
-
-        # if results is not a list, make it a list
-        if type(results) != list:
-            results = [results]
-
-        response = []
-
-        # for each result, build a dictionary and append to the formatted_results list
-        for bgp in results:
-            
-            response.append({
-                    'virtual_router':bgp['@vr'],
-                    'peer_name': bgp['@peer'], 
-                    'peer_group': bgp['peer-group'],
-                    'peer_router_id': bgp['peer-router-id'],
-                    'remote_as': bgp['remote-as'],
-                    'status': bgp['status'],
-                    'status_duration': bgp['status-duration'],
-                    'peer_address': bgp['peer-address'].split(':')[0],
-                    'local_address': bgp['local-address'].split(':')[0],
-            })
-
-        return response
-    
-    def show_interfaces(self) -> list:
-        """
-        Returns a list of dictionaries containing information about interfaces from the API.
-
-        Returns:
-        list: A list of dictionaries containing the following keys:
-            - name: The name of the interface.
-            - tag: The tag of the interface.
-            - vsys: The vsys of the interface.
-            - ip: The IP address of the interface.
-            - zone: The zone of the interface.
-            - virtual_router: The ID of the virtual router based on name and ngfw.
-        Raises:
-        MTngfwException: If there is an error with the API call or no interfaces are found.
-        """
-        
-        try:  
-            self.xapi.op("<show><interface>all</interface></show>")
-            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['ifnet']['entry']
-        except pan.xapi.PanXapiError as e:
-            raise MTngfwException(f"{self.ngfw.hostname}: {e}")
-        except TypeError:
-            raise MTngfwException(f"{self.ngfw.hostname} No interfaces found.")
-
-        # if results is not a list, make it a list
-        if type(results) != list:
-            results = [results]
-
-        response = []
-
-        # for each interface, get the id of the virtual router based on name and ngfw, add to the database
-        for i in results:
-            if 'fwd' not in i:
-                continue
-            if 'vr' not in i['fwd']:
-                continue
-            if i['zone'] == None:
-                continue
-
-            response.append({
-                'name': i.get('name', 'N/A'),
-                'tag': i.get('tag', 'N/A'),
-                'vsys': i.get('vsys', 'N/A'),
-                'ip': i.get('ip', 'N/A'),
-                'zone': i.get('zone', 'N/A'),
-                'virtual_router': i['fwd'].replace('vr:', '')
-            })
-
-        return response
-    
-    def show_routes(self) -> list:
-        """
-        Returns a list of routes from the API.
-
-        :return: A list of dictionaries containing information about each route.
-        :raises MTngfwException: If there was an error retrieving the routes.
-        """
-
-        try:
-            self.xapi.op("<show><routing><route><afi>ipv4</afi></route></routing></show>")
-            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['entry']
-        except pan.xapi.PanXapiError as e:
-            raise MTngfwException(f"{self.ngfw.hostname}: {e}")
-        except TypeError:
-            raise MTngfwException(f"{self.ngfw.hostname} No routes found.")
-
-        # if results is not a list, make it a list
-        if type(results) != list:
-            results = [results]
-
-        return results
-    
-    def show_ha_status(self) -> dict:
-        
-        try:
-            self.xapi.op("<show><high-availability><state></state></high-availability></show>")
-            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['group']['local-info']
-        except pan.xapi.PanXapiError as e:
-            raise MTngfwException(f"NGFW {self.ngfw.hostname}: {e}")
-        except TypeError:
-            raise MTngfwException(f"NGFW {self.ngfw.hostname} not in ha")
-        except KeyError:
-            raise MTngfwException(f"NGFW {self.ngfw.hostname} not in ha")
-        
-        if 'state' not in results:
-            raise MTngfwException(f"NGFW {self.ngfw.hostname} not in ha")
-        
-        return results
