@@ -92,6 +92,7 @@ class Route(Base):
     age = Column(Integer)
     interface = Column(String)
     route_table = Column(String)
+    zone = Column(String, default=None)
     
     # ForeignKey to associate with VirtualRouter
     virtual_router_id = Column(Integer, ForeignKey('virtual_router.id'))

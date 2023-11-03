@@ -233,6 +233,7 @@ class MTBuilder:
         """
 
         message = []
+        
         # query database for panorama based on ip address
         try:
             engine = create_engine(self.db_uri)
@@ -496,9 +497,13 @@ class MTController:
             
             self.session.commit()
 
+            # get all the vrs for this ngfw from the database
+            vr_list = {}
+            for item in self.session.query(VirtualRouter).filter(VirtualRouter.ngfw_id == n.id).all():
+                vr_list[item.name] = item.id
+
             ## continue interfaces block ##
             for i in interfaces:
-                vr = self.session.query(VirtualRouter).filter(VirtualRouter.name == i['virtual_router']).filter(VirtualRouter.ngfw_id == n.id).first()
 
                 new_interface = Interface(
                                             name=i['name'],
@@ -506,7 +511,7 @@ class MTController:
                                             vsys=i['vsys'],
                                             zone=i['zone'],
                                             ip=i['ip'],
-                                            virtual_router_id=vr.id
+                                            virtual_router_id=vr_list[i['virtual_router']]
                                         )
                 
                 interface_list.append(new_interface)
@@ -524,15 +529,15 @@ class MTController:
             # for each route, get the id of the virtual router based on name and ngfw, add to the database
             for r in routes:
 
-                vr = self.session.query(VirtualRouter).filter(VirtualRouter.name == r.get('virtual-router', 'N/A')).filter(VirtualRouter.ngfw_id == n.id).first()
-                new_route = Route(virtual_router_id=vr.id, 
+                new_route = Route(virtual_router_id=vr_list[r['virtual-router']],
                                   destination=r.get('destination', 'N/A'), 
                                   nexthop=r.get('nexthop', 'N/A'), 
                                   metric=r.get('metric', 'N/A'), 
                                   flags=r.get('flags', 'N/A'), 
                                   age=r.get('age', 'N/A'), 
                                   interface=r.get('interface', 'N/A'), 
-                                  route_table=r.get('route-table', 'N/A'))
+                                  route_table=r.get('route-table', 'N/A'),
+                                  zone='None')
 
                 # try to determine BGP route egress interface
                 if "B" in new_route.flags:
@@ -550,6 +555,20 @@ class MTController:
                             new_route.interface = i.name
                             break
 
+                # if H (Host) is present in the flags string, query the database for interface based on destination, 
+                # where destination is in the interface ip address range
+                if 'H' in new_route.flags:
+                    for i in interface_list:
+                        if new_route.destination.replace("/32","") in i.ip and i.virtual_router_id == new_route.virtual_router_id:
+                            new_route.interface = i.name
+                            new_route.zone = i.zone
+                            break
+                else:
+                    for i in interface_list:
+                        if i.name == new_route.interface and i.virtual_router_id == new_route.virtual_router_id:
+                            new_route.zone = i.zone
+                            break
+
                 self.session.add(new_route)
 
             self.session.commit()
@@ -564,10 +583,9 @@ class MTController:
             if bgp_peers:
                 for bgp_p in bgp_peers:
                     # get the virtual router id based on name and ngfw
-                    vr = self.session.query(VirtualRouter).filter(VirtualRouter.name == bgp_p['virtual_router']).filter(VirtualRouter.ngfw_id == n.id).first()
                     self.session.add(BGPPeer(
                                             ngfw_id=n.id,
-                                            virtual_router_id=vr.id,
+                                            virtual_router_id=vr_list[bgp_p['virtual_router']],
                                             peer_name=bgp_p['peer_name'],
                                             peer_group=bgp_p['peer_group'],
                                             peer_router_id=bgp_p['peer_router_id'],
@@ -641,26 +659,9 @@ class MTController:
                 'flags': r.flags,
                 'interface': str(r.interface) if r.interface is not None else 'None',
                 'route_table': r.route_table,
-                'age': str(r.age) if r.age is not None else 'None'
+                'age': str(r.age) if r.age is not None else 'None',
+                'zone': r.zone if r.zone else 'None'
             }
-
-            # if H (Host) is present in the flags string, query the database for interface based on destination, where destination is in the interface ip address range
-            if 'H' in route_data['flags']:
-                interface_info = self.session.query(Interface).filter(Interface.ip.contains(route_data['destination'].replace("/32",""))).first()
-                if interface_info:
-                    route_data['interface'] = interface_info.name
-                    route_data['zone'] = interface_info.zone
-                else:
-                    route_data['zone'] = "None"
-                    route_data['interface'] = "None"
-
-            # zone based on query of interface table from interface name, ngfw, and virtual router
-            else:
-                interface_info = self.session.query(Interface).filter(Interface.name == r.interface).filter(Interface.virtual_router_id == r.virtual_router_id).first()
-                if interface_info:
-                    route_data['zone'] = interface_info.zone
-                else:
-                    route_data['zone'] = "None"
 
             formatted_routes.append(route_data)
 

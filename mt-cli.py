@@ -430,10 +430,6 @@ if __name__ == '__main__':
         parser_add.add_argument("-p", "--password", type=str, default=None, help="Password for Panorama or NGFW (prompt if not included)")
 
         if inventory['Panoramas'] > 0:
-            # subcommand 'delete'
-            parser_delete = subparsers.add_parser("delete", help="Delete Panorama or NGFW from the database")
-            parser_delete.add_argument("platform", help="Panorama or NGFW")
-            parser_delete.add_argument("-s", "--serial", type=str, default=None, help="Serial of device (prompt if not included)")
 
             # subcommand 'import'
             parser_import = subparsers.add_parser("import", help="Import Panorama NGFWs (run before anything else if using Panoramas only)")
@@ -469,6 +465,11 @@ if __name__ == '__main__':
             parser_updateha = subparsers.add_parser("update-ha", help="Update HA Status")
             parser_updateha.add_argument("--pan", type=str, default=None, help="Filter Panorama")
             parser_updateha.add_argument("--ngfw", type=str, default=None, help="Filter NGFW")
+
+            # subcommand 'delete'
+            parser_delete = subparsers.add_parser("delete", help="Delete Panorama or NGFW from the database")
+            parser_delete.add_argument("platform", help="Panorama or NGFW")
+            parser_delete.add_argument("-s", "--serial", type=str, default=None, help="Serial of device (prompt if not included)")
     else:
         # subcommand 'build-db'
         parser_build = subparsers.add_parser("build-db", help="Build the database (must be run before anything else)")
