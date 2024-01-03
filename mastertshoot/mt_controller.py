@@ -208,8 +208,9 @@ class MTBuilder:
                 else:
                     ngfw_info['active'] = False
                 
-                ngfw_info['alt_serial'] = device_info['serial'],
-                ngfw_info['alt_ip'] = device_info['group']['peer-info']['mgmt-ip']
+
+                ngfw_info['alt_serial'] = ha_info['group']['peer-info']['serial-num']
+                ngfw_info['alt_ip'] = ha_info['group']['peer-info']['mgmt-ip']
 
             else:
                 ngfw_info['active'] = True
@@ -414,7 +415,10 @@ class MTController:
                     # if ha state is active, set active to true and alt_serial to peer serial number
                     if d['ha']['state'] == 'active':
                         ngfw_info['active'] = True
-                        ngfw_info['alt_serial'] = d['ha']['peer']['serial'] 
+                        if 'peer' in d['ha']:
+                            ngfw_info['alt_serial'] = d['ha']['peer']['serial'] 
+                        else:
+                            ngfw_info['alt_serial'] = None
                     else:
                         message.append(f"{ngfw_info['hostname']} {ngfw_info['serial_number']} is not active - skipping...")
                         continue
