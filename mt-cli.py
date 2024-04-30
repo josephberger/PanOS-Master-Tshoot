@@ -44,7 +44,8 @@ def print_inventory(mt):
 
 def print_items(mt,option, panorama=None, ngfw=None, virtual_router=None, destination=None, flags=None, interface=None, on_demand=False, yes=False):
 
-    __check_on_demand(multiplier=1, yes=yes)
+    if on_demand:
+        __check_on_demand(ngfw=ngfw, multiplier=1, yes=yes)
 
     # print routes
     if option == 'routes':
@@ -279,7 +280,7 @@ def update_atributes(mt, option, ngfw=None, virtual_router=None, interface=None,
     else:
         api_count = 1
 
-    __check_on_demand(multiplier=api_count, yes=yes)
+    __check_on_demand(ngfw=ngfw, multiplier=api_count, yes=yes)
 
     if option == 'routes':
         message = mt.update_routes(ngfw=ngfw, virtual_router=virtual_router)
@@ -381,7 +382,9 @@ def export_tsf(mt, ngfw, yes=False, ha=False):
 
     print("\n".join(message))
 
-def __check_on_demand(multiplier=1, yes=False):
+def __check_on_demand(ngfw=None, multiplier=1, yes=False):
+
+    if not ngfw:
 
         ngfw_count = int(mt.get_inventory()['NGFWs'])
 
