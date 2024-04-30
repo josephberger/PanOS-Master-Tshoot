@@ -78,6 +78,7 @@ class VirtualRouter(Base):
     ngfw = relationship('Ngfw', back_populates='virtual_routers')
     interfaces = relationship('Interface', back_populates='virtual_router')
     routes = relationship('Route', back_populates='virtual_router')
+    fib = relationship('Fib', back_populates='virtual_router')
     bgp_peers = relationship('BGPPeer', back_populates='virtual_router')
 
 
@@ -100,6 +101,25 @@ class Route(Base):
     # Establish the many-to-one relationship with VirtualRouter
     virtual_router = relationship('VirtualRouter', back_populates='routes')
 
+class Fib(Base):
+    __tablename__ = 'fibs'
+    
+    id = Column(Integer, primary_key=True)
+    fib_id = Column(Integer)
+    destination = Column(String)
+    interface = Column(String)
+    nh_type = Column(String)
+    flags = Column(String)
+    nexthop = Column(String)
+    mtu = Column(Integer)
+    zone = Column(String, default=None)
+    
+    # ForeignKey to associate with VirtualRouter
+    virtual_router_id = Column(Integer, ForeignKey('virtual_router.id'))
+
+    # Establish the many-to-one relationship with VirtualRouter
+    virtual_router = relationship('VirtualRouter', back_populates='fib')
+
 class Interface(Base):
     __tablename__ = 'interfaces'
     
@@ -117,6 +137,7 @@ class Interface(Base):
     
     # Establish the many-to-one relationship with VirtualRouter
     virtual_router = relationship('VirtualRouter', back_populates='interfaces') 
+    arps = relationship('Arp', back_populates='interface')
 
 class Neighbor(Base):
     __tablename__ = 'neighbors'
@@ -153,3 +174,20 @@ class BGPPeer(Base):
     # Establish the many-to-one relationship with Ngfw and VirtualRouter
     ngfw = relationship('Ngfw', back_populates='bgp_peers')
     virtual_router = relationship('VirtualRouter', back_populates='bgp_peers')
+
+class Arp(Base):
+    __tablename__ = 'arps'
+    
+    id = Column(Integer, primary_key=True)
+    ip = Column(String)
+    mac = Column(String)
+    status = Column(String)
+    port = Column(String)
+    ttl = Column(Integer)
+    zone = Column(String, default=None)
+    
+    # ForeignKey to associate with Interface
+    interface_id = Column(Integer, ForeignKey('interfaces.id'))
+
+    # Establish the many-to-one relationship with Interface
+    interface = relationship('Interface', back_populates='arps')

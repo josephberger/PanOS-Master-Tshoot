@@ -22,6 +22,7 @@
 
 import pan.xapi
 import xmltodict
+import time
 
 from models import Ngfw, Panorama
 
@@ -166,6 +167,76 @@ class MTngfw:
 
         self.xapi.timeout = self.timeout
 
+    def __null_value_check(self, result) -> dict:
+        """
+        This method checks for null values in the value dictionary and replaces with an empty string.
+
+        Args:
+            result (dict): The value to check.
+
+        Returns:
+            dict: The value or an empty string.
+        """
+
+        for key, value in result.items():
+            if not value:
+                result[key] = ''
+        return result
+
+    def show_system_info(self) -> dict:
+        """
+        Sends a request to the device to retrieve its system information.
+
+        Raises:
+            MTngfwException: If there is an error retrieving the system information.
+
+        Returns:
+            dict: A dictionary containing the system information of the device.
+        """
+        try:
+            self.xapi.op("<show><system><info></info></system></show>")
+            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']
+        except pan.xapi.PanXapiError as e:
+            raise MTngfwException(f"NGFW {self.ngfw.hostname}: {e}")
+        except TypeError:
+            raise MTngfwException(f"NGFW {self.ngfw.hostname} no system info found")
+        
+        return results
+    
+    def show_virtual_routes(self) -> list:
+        """
+        Retrieves virtual router information from the device and returns it as a list of dictionaries.
+
+        Raises:
+            MTngfwException: If there is an error retrieving the virtual router information.
+
+        Returns:
+            list: A list of dictionaries containing the following keys:
+                - name: The name of the virtual router.
+                - interfaces: The interfaces assigned to the virtual router.
+        """
+        # for each ngfw in ngfws, set the serial of self.xapi to ngfw.serial_number and show lldp neighbors on the xapi object
+        try:
+            self.xapi.op("<show><routing><summary></summary></routing></show>")
+            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['entry']
+        except pan.xapi.PanXapiError as e:
+            raise MTngfwException(f"{self.ngfw.hostname}: {e}")
+        except TypeError:
+            raise MTngfwException(f"{self.ngfw.hostname} no virtual routers found.")
+
+        # if results is not a list, make it a list
+        if type(results) != list:
+            results = [results]
+
+        response = []
+
+        # for each result if @name is in the result append the name to the response list
+        for r in results:
+            if '@name' in r:
+                response.append(r['@name'])
+
+        return response
+
     def show_neighbors(self) -> list:
         """
         Retrieves LLDP neighbor information from the device and returns it as a list of dictionaries.
@@ -208,15 +279,16 @@ class MTngfw:
             
             for lldp_n in lldp_neighbors:
                 response.append({
-                    'local_interface': r['@name'] or "None",
-                    'remote_interface_id': lldp_n['port-id'] or "None",
+                    'ngfw': self.ngfw.hostname,
+                    'local_interface': r['@name'] or "",
+                    'remote_interface_id': lldp_n['port-id'] or "",
                     'remote_interface_description': lldp_n['port-description'] or "",
-                    'remote_hostname': lldp_n['system-name'] or "None",
+                    'remote_hostname': lldp_n['system-name'] or "",
                 })
         
         return response
     
-    def show_bgp_peers(self) -> list:
+    def show_bgp_peers(self, virtual_router=None) -> list:
         """
         Retrieves BGP peer information from the device and returns it as a list of dictionaries.
 
@@ -236,14 +308,24 @@ class MTngfw:
                 - local_address: The local IP address of the peer.
         """
 
-        # for each ngfw in ngfw_list, set the serial of self.xapi to ngfw.serial_number and show lldp neighbors on the xapi object
+        # if virtual_router is set, set the virtual-router tag in the cmd
+        if virtual_router:
+            cmd = f"<virtual-router>{virtual_router}</virtual-router>"
+        else:
+            cmd = ""
+        
+        cmd = f"<show><routing><protocol><bgp><peer>{cmd}</peer></bgp></protocol></routing></show>"
+
         try:
-            self.xapi.op("<show><routing><protocol><bgp><peer></peer></bgp></protocol></routing></show>")
+            self.xapi.op(cmd=cmd)
             results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['entry']
         except pan.xapi.PanXapiError as e:
             raise MTngfwException(f"{self.ngfw.hostname} {e}")
         except TypeError:
-            raise MTngfwException(f"{self.ngfw.hostname} no bgp-peers found.")
+            if virtual_router:
+                raise MTngfwException(f"{self.ngfw.hostname} no bgp-peers found on vr: {virtual_router}")
+            else:
+                raise MTngfwException(f"{self.ngfw.hostname} has no bgp-peers")
 
         # if results is not a list, make it a list
         if type(results) != list:
@@ -255,6 +337,7 @@ class MTngfw:
         for bgp in results:
             
             response.append({
+                    'ngfw': self.ngfw.hostname,
                     'virtual_router':bgp['@vr'],
                     'peer_name': bgp['@peer'], 
                     'peer_group': bgp['peer-group'],
@@ -268,7 +351,7 @@ class MTngfw:
 
         return response
     
-    def show_interfaces(self) -> list:
+    def show_interfaces(self, virtual_router=None) -> list:
         """
         Returns a list of dictionaries containing information about interfaces from the API.
 
@@ -291,7 +374,7 @@ class MTngfw:
         except pan.xapi.PanXapiError as e:
             raise MTngfwException(f"{self.ngfw.hostname}: {e}")
         except TypeError:
-            raise MTngfwException(f"{self.ngfw.hostname} no interfaces found")
+            raise MTngfwException(f"{self.ngfw.hostname} has no interfaces")
 
         # if results is not a list, make it a list
         if type(results) != list:
@@ -307,19 +390,26 @@ class MTngfw:
                 continue
             if i['zone'] == None:
                 continue
+            
+            i_vr = i['fwd'].replace('vr:', '')
+
+            if virtual_router:
+                if i_vr != virtual_router:
+                    continue
 
             response.append({
-                'name': i.get('name', 'N/A'),
-                'tag': i.get('tag', 'N/A'),
-                'vsys': i.get('vsys', 'N/A'),
-                'ip': i.get('ip', 'N/A'),
-                'zone': i.get('zone', 'N/A'),
-                'virtual_router': i['fwd'].replace('vr:', '')
+                'ngfw': self.ngfw.hostname,
+                'name': i.get('name', ''),
+                'tag': i.get('tag', ''),
+                'vsys': i.get('vsys', ''),
+                'ip': i.get('ip', ''),
+                'zone': i.get('zone', ''),
+                'virtual_router': i_vr,
             })
 
         return response
     
-    def show_routes(self) -> list:
+    def show_routes(self, virtual_router=None, dst=None, flags=None) -> list:
         """
         Returns a list of routes from the API.
 
@@ -329,20 +419,178 @@ class MTngfw:
         Returns:
             list: dictionaries containing route information
         """
+        
+        cmd = "<afi>ipv4</afi>"
+
+        if virtual_router:
+            cmd += f"<virtual-router>{virtual_router}</virtual-router>"
+
+        cmd = f"<show><routing><route>{cmd}</route></routing></show>"
 
         try:
-            self.xapi.op("<show><routing><route><afi>ipv4</afi></route></routing></show>")
+            self.xapi.op(cmd=cmd)
             results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['entry']
         except pan.xapi.PanXapiError as e:
             raise MTngfwException(f"{self.ngfw.hostname}: {e}")
         except TypeError:
+            raise MTngfwException(f"{self.ngfw.hostname} no routes found.")
+        except KeyError:
             raise MTngfwException(f"{self.ngfw.hostname} no routes found.")
 
         # if results is not a list, make it a list
         if type(results) != list:
             results = [results]
 
-        return results
+        new_routes = []
+
+        for r in results:
+            self.__null_value_check(r)
+            
+            # if flags is set, check if it is in the route entry, if not continue
+            if flags:
+                if flags not in r['flags']:
+                    continue
+            
+            # if dst is set, check if it is in the route entry, if not continue
+            if dst:
+                if dst not in r['destination']:
+                    continue
+            
+            # change virtual-router to virtual_router
+            r['virtual_router'] = r.pop('virtual-router')
+
+            # change route-table to route_table
+            r['route_table'] = r.pop('route-table')
+
+            # add the ngfw hostname to the route entry
+            r['ngfw'] = self.ngfw.hostname
+            # add zone to the route entry
+            r['zone'] = ''
+            
+            new_routes.append(r)
+
+        return new_routes
+    
+    def show_fibs(self, virtual_router=None, dst=None, flags=None) -> list:
+        """
+        Returns a list of FIB routes from the API.
+
+        Raises:
+            MTngfwException: If there is an error with the API call or no FIB routes are found.
+
+        Returns:
+            list: dictionaries containing FIB route information
+        """
+
+        cmd = "<afi>ipv4</afi>"
+
+        if virtual_router:
+            cmd += f"<virtual-router>{virtual_router}</virtual-router>"
+        
+        cmd = f"<show><routing><fib>{cmd}</fib></routing></show>"
+
+        try:
+            self.xapi.op(cmd=cmd)
+            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['fibs']['entry']
+
+        except pan.xapi.PanXapiError as e:
+            if f"{virtual_router} is invalid virtual-router" in str(e):
+                err_msg = "{virtual_router} is invalid virtual-router"
+            else:
+                err_msg = str(e)
+            raise MTngfwException(f"{self.ngfw.hostname}: {err_msg}")
+        
+        except TypeError:
+            raise MTngfwException(f"{self.ngfw.hostname} no fib entries found.")
+
+        # if results is not a list, make it a list
+        if type(results) != list:
+            results = [results]
+
+        fibs = []
+
+        # Add the virtual_router to each entry to aline with the show routes command
+        for r in results:
+            try:
+                fib_vr = r['vr']
+
+                if r['nentries'] == '0':
+                    continue
+
+                if type(r['entries']['entry']) != list:
+                    r['entries']['entry'] = [r['entries']['entry']]
+
+                for fib in r['entries']['entry']:
+                    
+                    # if dst is set, check if it is in the fib entry, if not continue
+                    if dst:
+                        if dst not in fib['dst']:
+                            continue
+
+                    # if flags is set, check if it is in the fib entry, if not continue
+                    if flags:
+                        if flags not in fib['flags']:
+                            continue
+
+                    # check all values in fib, if None set to 'None'
+                    fib = self.__null_value_check(fib)
+                    # add the ngfw hostname to the fib entry
+                    fib['ngfw'] = self.ngfw.hostname
+                    # add the virtual_router to the fib entry
+                    fib['virtual_router'] = fib_vr
+                    # change the key 'dst' to 'destination'
+                    fib['destination'] = fib.pop('dst')
+                    # change the key 'id' to 'fib_id'
+                    fib['fib_id'] = fib.pop('id')
+                    # set zone to None
+                    fib['zone'] = ''
+                    fibs.append(fib)
+            except KeyError:
+                continue
+
+        return fibs
+
+    def show_arps(self, interface=None) -> list:
+        """
+        Returns a list of ARP entries from the API.
+
+        Raises:
+            MTngfwException: If there is an error with the API call or no ARP entries are found.
+
+        Returns:
+            list: dictionaries containing ARP entry information
+        """
+
+        if interface:
+            cmd_if = interface
+        else:
+            cmd_if = 'all'
+
+        try:
+            self.xapi.op(f"<show><arp><entry name = '{cmd_if}'/></arp></show>")
+            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['entries']['entry']
+        except pan.xapi.PanXapiError as e:
+            raise MTngfwException(f"{self.ngfw.hostname}: {e}")
+        except TypeError:
+            raise MTngfwException(f"{self.ngfw.hostname} no arp entries found")
+        except KeyError:
+            if interface:
+                raise MTngfwException(f"{self.ngfw.hostname} no arp entries found for {interface}")
+            else:
+                raise MTngfwException(f"{self.ngfw.hostname} no arp entries found")
+
+        # if results is not a list, make it a list
+        if type(results) != list:
+            results = [results]
+
+        arps = []
+        for a in results:
+            a = self.__null_value_check(a)
+            a['ngfw'] = self.ngfw.hostname
+            a['zone'] = ''
+            arps.append(a)
+
+        return arps
     
     def show_ha_status(self) -> dict:
         """
@@ -368,3 +616,55 @@ class MTngfw:
             raise MTngfwException(f"NGFW {self.ngfw.hostname} not in ha")
         
         return results
+    
+    def export_tsf(self, serial) -> dict:
+        """
+        Exports the tech support file from the device.
+
+        Raises:
+            MTngfwException: If there is an error exporting the tech support file.
+
+        Returns:
+            bytes: Containing the tech support file (tar.gz).
+        """
+        
+        # if the ngfw is managed by panorama raise an exception informing the user it is not supported
+        if self.ngfw.panorama:
+            raise MTngfwException(f"NGFW {self.ngfw.hostname} is managed by Panorama and does not support exporting tech support files.")
+
+        if serial == self.ngfw.alt_serial:
+            self.xapi.hostname = self.ngfw.alt_ip
+
+        try:
+            self.xapi.export(category="tech-support")
+            job = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']
+        except pan.xapi.PanXapiError as e:
+            raise MTngfwException(f"NGFW {self.ngfw.hostname}: {e}")
+        except TypeError as e:
+            raise MTngfwException(f"NGFW {self.ngfw.hostname} error exporting tech support file")
+        
+        try:
+            job_status = "PEND"
+            job_result = None
+            job_id = job['job']
+            while job_status != "FIN" and job_result != "OK":
+                time.sleep(10)
+                self.xapi.op(f"<show><jobs><id>{job_id}</id></jobs></show>")
+                job_check = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['job']
+                job_status = job_check['status']
+                job_result = job_check['result']
+                if job_result == "FAIL":
+                    raise MTngfwException(f"NGFW {self.ngfw.hostname} tech support file export failed")
+
+            self.xapi.export(category="tech-support", extra_qs={"action":"get","job-id":job['job']})
+
+            tsf = self.xapi.export_result['content']
+
+        except pan.xapi.PanXapiError as e:
+            raise MTngfwException(f"NGFW {self.ngfw.hostname}: {e}")
+        except TypeError as e:
+            raise MTngfwException(f"NGFW {self.ngfw.hostname} error exporting tech support file")
+
+        # return the binary TSF
+        print(type(tsf))
+        return tsf

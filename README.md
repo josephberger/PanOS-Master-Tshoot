@@ -4,23 +4,22 @@ PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information f
 
 ## Version Changes
 
-**Command Structure**
-- Each command is now separated with its own flags (show, fib, import etc).  See below for examples.
-- Each command has its own help menu.  Use `--help` to see the options for each command.
-- Certain commands are not available depending on the state of the database.  For example, `show` is not available unless there are NGFWs present.
+**Commands**
+- Added `update` command for pulling or updating bgp-peers, routes, arps etc.
+- Changed `refresh` command to only include vrs and interfaces to establish basic infrastructure.
+- Changed `fib` to `fib-lookup`.
 
-**More Information**
-- NGFWs now have refresh time that is updated.
-- Panoramas now show serial numbers.
-- More verbose messaging for errors and success.
+**Items**
+- Arp Table
+- FIB Table (IPv4 only and included with `update routes`)
 
-**Delete Panoramas or NGFWs**
-- Panoramas or NGFWs can now be deleted from the database.  This will remove all associated information.
+**TSF Command BETA**
+- Added `tsf` command for pulling a tsf file from a NGFW.
+- Only works with NGFWs directly connected to mt-cli (can still be managed by Porama but not imported into MT).
+- Panorama not supported.
 
-**Removal of mt-tools**
-- Everything is now run through `mt-cli.py`
-- `build-db` must be run before any other commands are available.
-- If the database is available, command are then available to run and be seen in `--help`.  Note that `build-db` will not be available if the database has been built.
+**General Code Cleanup**
+- Extensive code cleanup and refactoring.
 
 ## Introduction
 
@@ -70,14 +69,6 @@ python mt-cli.py refresh --ngfw <NGFW_NAME>
 8. For ease of use, most queries are based on hostnames once added/imported.  If you have multiple NGFWs with the same hostname, MT will add a `-1` to the back of the hostname.
 9. Probably some bugs and vulns.  Please report and they will be addressed in the next version.
 
-## MT-Tools Usage
-
-To use `mt-tools.py`, open your terminal and navigate to the directory containing the script. You can execute various commands with the following syntax:
-
-```bash
-python mt-tools.py [options]
-```
-
 ## MT-CLI Usage
 To use `mt-cli.py`, open your terminal and navigate to the directory containing the script. Then, you can execute various commands with the following syntax:
 
@@ -95,22 +86,34 @@ Here are the available command-line options for `mt-cli.py` (use --help for each
 - `delete`: Delete a Panorama or NGFW from the database.
 - `import`: Import NGFWs connected to Panorama (run this before other operations if using Panorama).
 - `refresh`: Refresh NGFW information (use with optional filters).
+- `update`: Update NGFW information (use with optional filters).
 - `show`: Display routes, virtual routers, interfaces, NGFWs, Panorama details, LLDP neighbors, BGP peers.
-- `fib`: Perform FIB Lookup for an IPv4 address.
+- `fib-lookup`: Perform FIB Lookup for an IPv4 address.
+- `tsf`: Pull a tsf file from a NGFW.
 - `update-ha`: Update HA (High Availability) status.
 
 ## MT-CLI Examples
 
 Here are some example commands to get you started:
 
+- Add a Panorama:
+  ```bash
+  python mt-cli.py add panorama -H <IP_ADDRESS>
+  ```
+
 - Import Panorama NGFWs:
   ```bash
   python mt-cli.py import
   ```
 
-- Refresh routes for a specific NGFW:
+- Refresh base infastructure for a specific NGFW:
   ```bash
   python mt-cli.py refresh --ngfw <NGFW_NAME>
+  ```
+
+- Update BGP peers for a specific NGFW:
+  ```bash
+  python mt-cli.py update bgp-peers --ngfw <NGFW_NAME>
   ```
 
 - Show LLDP neighbors for a specific NGFW on demand:
@@ -120,12 +123,12 @@ Here are some example commands to get you started:
 
 - Calculate FIB Lookup for an IP address:
   ```bash
-  python mt-cli.py fib <IP_ADDRESS>
+  python mt-cli.py fib-lookup <IP_ADDRESS>
   ```
 
 - Run test FIB Lookup for an IP address:
   ```bash
-  python mt-cli.py fib <IP_ADDRESS> --on-demand
+  python mt-cli.py fib-lookup <IP_ADDRESS> --on-demand
   ```
 
 - Print routes with specific filters:
