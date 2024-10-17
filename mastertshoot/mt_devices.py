@@ -19,12 +19,13 @@
 # LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
+import functools
 
 import pan.xapi
 import xmltodict
 import time
 
-from models import Ngfw, Panorama
+# from models import Ngfw, Panorama
 
 class MTpanoramaException(Exception):
     pass
@@ -183,6 +184,7 @@ class MTngfw:
                 result[key] = ''
         return result
 
+    
     def show_system_info(self) -> dict:
         """
         Sends a request to the device to retrieve its system information.
@@ -200,8 +202,11 @@ class MTngfw:
             raise MTngfwException(f"NGFW {self.ngfw.hostname}: {e}")
         except TypeError:
             raise MTngfwException(f"NGFW {self.ngfw.hostname} no system info found")
+        except TimeoutError:
+            raise MTngfwException(f"NGFW {self.ngfw.hostname} timeout error")
         
         return results
+    
     
     def show_virtual_routes(self) -> list:
         """
@@ -237,6 +242,7 @@ class MTngfw:
 
         return response
 
+    
     def show_neighbors(self) -> list:
         """
         Retrieves LLDP neighbor information from the device and returns it as a list of dictionaries.
@@ -287,6 +293,7 @@ class MTngfw:
                 })
         
         return response
+    
     
     def show_bgp_peers(self, virtual_router=None) -> list:
         """
@@ -351,6 +358,7 @@ class MTngfw:
 
         return response
     
+    
     def show_interfaces(self, virtual_router=None) -> list:
         """
         Returns a list of dictionaries containing information about interfaces from the API.
@@ -408,6 +416,7 @@ class MTngfw:
             })
 
         return response
+    
     
     def show_routes(self, virtual_router=None, dst=None, flags=None) -> list:
         """
@@ -470,6 +479,7 @@ class MTngfw:
             new_routes.append(r)
 
         return new_routes
+    
     
     def show_fibs(self, virtual_router=None, dst=None, flags=None) -> list:
         """
@@ -550,6 +560,7 @@ class MTngfw:
 
         return fibs
 
+    
     def show_arps(self, interface=None) -> list:
         """
         Returns a list of ARP entries from the API.
@@ -592,6 +603,7 @@ class MTngfw:
 
         return arps
     
+    
     def show_ha_status(self) -> dict:
         """
         Sends a request to the device to retrieve its high availability status.
@@ -616,6 +628,60 @@ class MTngfw:
             raise MTngfwException(f"NGFW {self.ngfw.hostname} not in ha")
         
         return results
+    
+    
+    def test_policy_match(self, src_ip, src_zone, dst_ip, dst_zone, protocol, dst_port, application) -> dict:
+        """
+        Sends a request to the device to test a security policy match.
+
+        Args:
+            src_ip (str): The source IP address.
+            src_zone (str): The source zone.
+            dst_ip (str): The destination IP address.
+            dst_zone (str): The destination zone.
+            protocol (str): The protocol.
+            dst_port (str): The destination port.
+            application (str): The application.
+
+        Raises:
+            MTngfwException: If there is an error testing the security policy match.
+
+        Returns:
+            dict: Containing the results of the security policy match test.
+        """
+        cmd_start = "<test><security-policy-match>"
+        cmd_end = "</security-policy-match></test>"
+
+        cmd = f"<source>{src_ip}</source>"
+        cmd += f"<from>{src_zone}</from>"
+        cmd += f"<destination>{dst_ip}</destination>"
+        cmd += f"<to>{dst_zone}</to>"
+        cmd += f"<protocol>{protocol}</protocol>"
+        cmd += f"<destination-port>{dst_port}</destination-port>"
+        cmd += f"<application>{application}</application>"
+
+        cmd = cmd_start + cmd + cmd_end
+
+        try:
+            self.xapi.op(cmd)
+            results = xmltodict.parse("<root>" + self.xapi.xml_result() + "</root>")['root']['rules']['entry']
+        except pan.xapi.PanXapiError as e:
+            raise MTngfwException(f"NGFW {self.ngfw.hostname}: {e}")
+        except TypeError as e:
+            print(self.xapi.xml_result())
+            raise MTngfwException(f"NGFW {self.ngfw.hostname}: {e}")
+        
+        if type(results) != list:
+            results = [results]
+
+        rules = []
+        for r in results:
+            r['ngfw'] = self.ngfw.hostname
+            r = self.__null_value_check(r)
+            rules.append(r)
+
+        return rules
+
     
     def export_tsf(self, serial) -> dict:
         """

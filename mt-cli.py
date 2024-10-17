@@ -247,12 +247,6 @@ def print_fib_lookup(mt,ip_address, virtual_router=None, ngfw=None, on_demand=Fa
 
     __print_results(headers, response['results'], response['message'])
 
-def collect_tsf(mt, serial):
-    
-        message = mt.collect_tsf(serial=serial)
-
-        print("\n".join(message))
-
 def refresh_ngfws(mt,ngfw=None, yes=False):
 
     if not ngfw:
@@ -290,13 +284,14 @@ def update_atributes(mt, option, ngfw=None, virtual_router=None, interface=None,
         message = mt.update_bgp_peers(ngfw=ngfw)
     elif option == 'arps':
         message = mt.update_arps(ngfw=ngfw, interface=interface)
-    elif option == 'all':
-        message = mt.update_routes(ngfw=ngfw)
-        message += mt.update_arps(ngfw=ngfw)
-        message += mt.update_neighbors(ngfw=ngfw)
-        message += mt.update_bgp_peers(ngfw=ngfw)
+    #TODO:  Add support for updating all attributes to the mt_controller vs mt-cli
+    # elif option == 'all':
+    #     message = mt.update_routes(ngfw=ngfw)
+    #     message += mt.update_arps(ngfw=ngfw)
+    #     message += mt.update_neighbors(ngfw=ngfw)
+    #     message += mt.update_bgp_peers(ngfw=ngfw)
     else:
-        print("Invalid option.  Valid options are 'routes', 'arps', 'lldp', 'bgp-peers', 'all'")
+        print("Invalid option.  Valid options are 'routes', 'arps', 'lldp', 'bgp-peers'")
         exit()
 
     print("\n".join(message))
@@ -372,15 +367,6 @@ def delete_ngfw(mb, serial_number=None):
         print(response)
     except MTBuilderException as e:
         print(e)
-
-def export_tsf(mt, ngfw, yes=False, ha=False):
-
-    if ha:
-        message = mt.export_tsf(ngfw=ngfw, ha=ha, yes=yes)
-    else:
-        message = mt.export_tsf(ngfw=ngfw, yes=yes)
-
-    print("\n".join(message))
 
 def __check_on_demand(ngfw=None, multiplier=1, yes=False):
 
@@ -472,7 +458,7 @@ if __name__ == '__main__':
 
             # subcommand 'update'
             parser_update = subparsers.add_parser("update", help="Update NGFW attributes")
-            parser_update.add_argument("option", help="routes, arps, lldp, bgp-peers, all")
+            parser_update.add_argument("option", help="routes, arps, lldp, bgp-peers")
             parser_update.add_argument("--ngfw", type=str, default=None, help="Which NGFW to update")
             parser_update.add_argument("--vr", type=str, default=None, help="Which virtual router to update")
             parser_update.add_argument("--int", type=str, default=None, help="Which interface to update (arp)")
@@ -498,9 +484,6 @@ if __name__ == '__main__':
             parser_fib.add_argument("--on-demand", action="store_true", help="On demand API call vs routing calculation")
             parser_fib.add_argument("--yes", action="store_true", help="Do not prompt for on-demand confirmation")
 
-            # subcommand 'tsf'
-            parser_tsf = subparsers.add_parser("tsf", help="Tech Support File (TSF) Collection")
-            parser_tsf.add_argument("serial", help="Serial number of device")
 
         if inventory['NGFWs'] > 0 or inventory['Panoramas'] > 0:
             # subcommand 'update-ha'
@@ -512,6 +495,7 @@ if __name__ == '__main__':
             parser_delete = subparsers.add_parser("delete", help="Delete Panorama or NGFW from the database")
             parser_delete.add_argument("platform", help="Panorama or NGFW")
             parser_delete.add_argument("-s", "--serial", type=str, default=None, help="Serial of device (prompt if not included)")
+
     else:
         # subcommand 'build-db'
         parser_build = subparsers.add_parser("build-db", help="Build the database (must be run before anything else)")
@@ -565,9 +549,6 @@ if __name__ == '__main__':
     elif args.command == "fib-lookup":
         print_fib_lookup(mt, ip_address=args.address, virtual_router=args.vr, ngfw=args.ngfw, on_demand=args.on_demand, yes=args.yes)
     
-    elif args.command == "tsf":
-        collect_tsf(mt, serial=args.serial)
-
     elif args.command == "update-ha":
         message = mt.update_ha_status()
         if message:

@@ -23,11 +23,12 @@
 import ipaddress
 import datetime
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 import pan.xapi
 import xmltodict
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, select
+from sqlalchemy.orm import sessionmaker, joinedload
 
 from models import Base, Ngfw, Route, VirtualRouter, Interface, Panorama, Neighbor, BGPPeer, Fib, Arp
 
@@ -41,7 +42,18 @@ class MTBuilderException(Exception):
     pass
 
 class MTBuilder:
+
     def __init__(self, db_uri=db_uri, timeout=timeout) -> None:
+        """
+        Initializes an instance of the MTBuilder class.
+
+        Args:
+            db_uri (str): The URI of the database.
+            timeout (int): The timeout value in seconds.
+
+        Raises:
+            MTBuilderException: If the timeout value is not an integer.
+        """
         self.db_uri = db_uri
 
         try:
@@ -51,9 +63,11 @@ class MTBuilder:
 
     def build_database(self) -> str:
         """
-        Builds the sqlite database
-        """
+        Builds an empty database by creating the necessary tables.
 
+        Returns:
+            str: A message indicating the status of the database creation.
+        """
         try:
             # create the database engine
             engine = create_engine(self.db_uri)
@@ -63,7 +77,7 @@ class MTBuilder:
 
             return "Empty database successfully created"
         except Exception as e:
-            return "Issue connecting to the database.  Error: {e}"
+            return f"Issue connecting to the database. Error: {e}"
         
     def add_panorama(self, ip_address, username, password) -> str:
         """
@@ -409,7 +423,8 @@ class MTController:
                 
                 # if connected is not yes continue
                 if d['connected'] != 'yes':
-                    message.append(f"{d['hostname']} {d['serial']} not connected - skipping...")
+                    hostname = d['hostname'] if 'hostname' in d else d['serial']
+                    message.append(f"{hostname} {d['serial']} not connected - skipping...")
                     continue
                 
                 ngfw_info = {
@@ -971,7 +986,7 @@ class MTController:
         return response
  
 
-    def get_virtual_routers(self, ngfw=None, virtual_router=None) -> dict:
+    def get_virtual_routers(self, ngfw=None, virtual_router=None, extra_info=True) -> dict:
         """
         Returns virtual routers
         """
@@ -999,10 +1014,12 @@ class MTController:
                 'ngfw_id': vr.ngfw_id,
                 'ngfw': vr.ngfw.hostname,
                 'virtual_router': vr.name,
-                'route_count': len(vr.routes),
-                'fib_count': len(vr.fib),
-                'interface_count': len(vr.interfaces)
             }
+
+            if extra_info:
+                vr_dict['route_count'] = len(vr.routes)
+                vr_dict['fib_count'] = len(vr.fib)
+                vr_dict['interface_count'] = len(vr.interfaces)
 
             formatted_virtual_routers.append(vr_dict)
 
@@ -1119,7 +1136,19 @@ class MTController:
 
     def get_panoramas(self) -> dict:
         """
-        Returns panoramas
+        Retrieves a dictionary containing information about the panoramas.
+
+        Returns:
+            A dictionary with the following keys:
+            - 'message': A list of messages, which will be empty if panoramas are found.
+            - 'results': A list of dictionaries containing information about each panorama.
+              Each dictionary contains the following keys:
+              - 'hostname': The hostname of the panorama.
+              - 'serial_number': The serial number of the panorama.
+              - 'ip_address': The IP address of the panorama.
+              - 'alt_ip': The alternate IP address of the panorama, or an empty string if not available.
+              - 'active': A string indicating whether the panorama is active ('yes') or not ('no').
+              - 'ngfws': The number of NGFWs associated with the panorama.
         """
         response = {'message':[], 'results':None}
 
@@ -1149,9 +1178,20 @@ class MTController:
     
     def calculate_fib_lookup(self, ip_address, vr_query=None, ngfw_query=None) -> dict:
         """
-        Returns fib calculations
-        """
+        Calculates the FIB lookup for a given IP address.
 
+        Args:
+            ip_address (str): The IP address to perform the FIB lookup on.
+            vr_query (str, optional): The virtual router name to filter the lookup. Defaults to None.
+            ngfw_query (str, optional): The NGFW hostname to filter the lookup. Defaults to None.
+
+        Returns:
+            dict: A dictionary containing the FIB lookup results.
+
+        Raises:
+            MTControllerException: If the provided IP address is invalid.
+
+        """
         response = {'message':[], 'results':None}
 
         query = self.session.query(VirtualRouter)
@@ -1209,7 +1249,7 @@ class MTController:
                     if int(destination.prefixlen) > prefix:
                         prefix = int(destination.prefixlen)
 
-            # if no results found for prefixs' (likley caused by a vr with no default route), continue
+            # if no results found for prefixs' (likely caused by a vr with no default route), continue
             if len(dst) == 0:
 
                 formatted_results.append( {
@@ -1242,13 +1282,21 @@ class MTController:
             formatted_results.append(route_data)
 
         response['results'] = formatted_results
+
         return response
      
     def update_routes(self, ngfw=None, virtual_router=None) -> list:
         """
-        Updates routes and fibs
-        """
+        Update routes and fibs for NGFWs and virtual routers.
 
+        Args:
+            ngfw (str, optional): The hostname of the NGFW to update routes for. If not provided, routes for all NGFWs will be updated. Defaults to None.
+            virtual_router (str, optional): The name of the virtual router to update routes for. If not provided, routes for all virtual routers will be updated. Defaults to None.
+
+        Returns:
+            list: A list of messages indicating the status of the route and fib updates for each NGFW.
+
+        """
         # message to be returned
         message = []
 
@@ -1281,10 +1329,14 @@ class MTController:
                 continue
 
             # update fibs #
-            try:
-                fibs = self.get_fibs(ngfw=n.hostname,virtual_router=virtual_router, on_demand=True)['results']
-            except MTngfwException as e:
-                message.append(f"{e}")
+
+            response = self.get_fibs(ngfw=n.hostname,virtual_router=virtual_router, on_demand=True)
+            fibs = response['results']
+
+            # if no fibs are returned, continue
+            if not fibs:
+                for m in response['message']:
+                    message.append(m)
                 continue
 
             # delete the existing fibs from the database
@@ -1295,34 +1347,23 @@ class MTController:
             for ef in existing_fibs:
                 self.session.delete(ef)
 
-            # if no fibs are returned, continue
-            if not fibs:
-                # if virtual_router is present, append the message
-                if virtual_router:
-                    message.append(f"{n.hostname} vr:{virtual_router} has no fibs")
-                else:
-                    message.append(f"{n.hostname} has no fibs")
-                continue
-            else:
-                fib_count = len(fibs)
-
             # for each fib, add to the database
+            
+
+            thread_pool = ThreadPoolExecutor(max_workers=10)
+            futures = []
+
             for f in fibs:
-                new_fib = Fib(
-                                virtual_router_id=vr_list[f['virtual_router']],
-                                fib_id=f['fib_id'],
-                                destination=f['destination'],
-                                interface=f['interface'],
-                                nh_type=f['nh_type'],
-                                flags=f['flags'],
-                                nexthop=f['nexthop'],
-                                mtu=f['mtu'],
-                                zone=f['zone']
-                            )
 
-                self.session.add(new_fib)
+                futures.append(thread_pool.submit(self.__create_fib, vr_list[f['virtual_router']], f['fib_id'], f['destination'], f['interface'], f['nh_type'], f['flags'], f['nexthop'], f['mtu'], f['zone']))
 
-            self.session.commit()
+            db_fibs = []
+
+            for future in as_completed(futures):
+                new_fib = future.result()
+                db_fibs.append(new_fib)
+            
+            self.session.add_all(db_fibs)
 
             # update routes #
 
@@ -1336,14 +1377,11 @@ class MTController:
 
             # if no routes are returned, continue
             if not routes:
-                # if virtual_router is present, append the message
                 if virtual_router:
                     message.append(f"{n.hostname} vr:{virtual_router} has no routes")
                 else:
                     message.append(f"{n.hostname} has no routes")
                 continue
-            else:
-                route_count = len(routes)
 
             # delete the existing routes from the database
             ef_query = self.session.query(Route).join(Route.virtual_router).join(VirtualRouter.ngfw).filter(Ngfw.id == n.id)
@@ -1354,33 +1392,103 @@ class MTController:
                 self.session.delete(er)
 
             # for each route, add to the database
+
+            thread_pool = ThreadPoolExecutor(max_workers=10)
+            futures = []
+
             for r in routes:
 
-                new_route = Route(virtual_router_id=vr_list[r['virtual_router']],
-                                    destination=r.get('destination', ''), 
-                                    nexthop=r.get('nexthop', ''), 
-                                    metric=r.get('metric', ''), 
-                                    flags=r.get('flags', ''), 
-                                    age=r.get('age', ''), 
-                                    interface=r.get('interface', ''), 
-                                    route_table=r.get('route_table', ''),
-                                    zone=r.get('zone', ''))
-                
-                # add the new route to the database
-                self.session.add(new_route)
+                futures.append(thread_pool.submit(self.__create_route, vr_list[r['virtual_router']], r['destination'], r['nexthop'], r['metric'], r['flags'], r['age'], r['interface'], r['route_table'], r['zone']))
+            
+            db_routes = []
+
+            for future in as_completed(futures):
+                new_route = future.result()
+                db_routes.append(new_route)
+            
+            self.session.add_all(db_routes)
             
             self.session.commit()
 
             # append the message
-            message.append(f"{n.hostname} {route_count} routes updated and {fib_count} fibs updated")
+            message.append(f"{n.hostname} {len(routes)} routes updated and {len(fibs)} fibs updated")
 
         return message
     
+    def __create_fib(self, vr_id, fib_id, destination, interface, nh_type, flags, nexthop, mtu, zone):
+        """
+        Create a FIB object.
+
+        Args:
+            vr_id (int): The ID of the virtual router.
+            fib_id (str): The FIB ID.
+            destination (str): The destination.
+            interface (str): The interface.
+            nh_type (str): The next-hop type.
+            flags (str): The flags.
+            nexthop (str): The next-hop.
+            mtu (int): The MTU.
+            zone (str): The zone.
+
+        Returns:
+            Fib: The FIB object.
+
+        """
+        return Fib(
+            virtual_router_id=vr_id,
+            fib_id=fib_id,
+            destination=destination,
+            interface=interface,
+            nh_type=nh_type,
+            flags=flags,
+            nexthop=nexthop,
+            mtu=mtu,
+            zone=zone
+        )
+
+    def __create_route(self, vr_id, destination, nexthop, metric, flags, age, interface, route_table, zone):
+        """
+        Create a Route object.
+
+        Args:
+            vr_id (int): The ID of the virtual router.
+            destination (str): The destination.
+            nexthop (str): The next-hop.
+            metric (str): The metric.
+            flags (str): The flags.
+            age (str): The age.
+            interface (str): The interface.
+            route_table (str): The route table.
+            zone (str): The zone.
+
+        Returns:
+            Route: The Route object.
+
+        """
+        return Route(
+            virtual_router_id=vr_id,
+            destination=destination,
+            nexthop=nexthop,
+            metric=metric,
+            flags=flags,
+            age=age,
+            interface=interface,
+            route_table=route_table,
+            zone=zone
+        )
+
     def update_arps(self, ngfw=None, interface=None) -> list:
         """
-        Updates ARPs
-        """
+        Update ARPs for NGFWs.
 
+        Args:
+            ngfw (str): The hostname of the NGFW to update ARPs for. If not provided, ARPs will be updated for all NGFWs.
+            interface (str): The name of the interface to update ARPs for. If not provided, ARPs will be updated for all interfaces.
+
+        Returns:
+            list: A list of messages indicating the status of the ARP update for each NGFW.
+
+        """
         message = []
 
         query = self.session.query(Ngfw)
@@ -1396,16 +1504,15 @@ class MTController:
 
         for n in ngfw_list:
             try:
-                arps = self.get_arps(ngfw=n.hostname, interface=interface, on_demand=True)['results']
+                response = self.get_arps(ngfw=n.hostname, interface=interface, on_demand=True)
+                arps = response['results']
             except MTngfwException as e:
                 message.append(f"{e}")
                 continue
 
             if not arps:
-                if interface:
-                    message.append(f"{n.hostname} no arp entries found on interface {interface}")
-                else:
-                    message.append(f"{n.hostname} no arp entries found")
+                for m in response['message']:
+                    message.append(m)
                 continue
             else:
                 arp_count = len(arps)
@@ -1458,6 +1565,8 @@ class MTController:
     def update_neighbors(self, ngfw=None) -> list:
         """
         Updates neighbors
+        args:
+            ngfw: str: hostname of the ngfw to update neighbors
         """
 
         message = []
@@ -1475,13 +1584,16 @@ class MTController:
 
         for n in ngfw_list:
             try:
-                neighbors = self.get_neighbors(ngfw=n.hostname, on_demand=True)['results']
+                response = self.get_neighbors(ngfw=n.hostname, on_demand=True)
+                neighbors = response['results']
             except MTngfwException as e:
                 message.append(f"{e}")
                 continue
 
             if not neighbors:
-                message.append(f"{n.hostname} has no neighbors")
+                # message.append(f"{n.hostname} has no neighbors")
+                for m in response['message']:
+                    message.append(m)
                 continue
             else:
                 neighbor_count = len(neighbors)
@@ -1705,38 +1817,5 @@ class MTController:
                 message.append(f"NGFW {n.hostname} is active")
 
         self.session.commit()
-
-        return message
-    
-    def collect_tsf(self, serial) -> list:
-        """
-        Collects tsf from the ngfw or panorama via API based on serial number
-        """
-
-        message = []
-
-        # query the database for the ngfw based on serial number
-        ngfw = self.session.query(Ngfw).filter(Ngfw.serial_number == serial).first()
-
-        if not ngfw:
-            message.append(f"Serial number {serial} not found in database")
-            return message
-        
-        #create the mtd object
-        mtd = MTngfw(ngfw)
-
-        try:
-            tsf = mtd.export_tsf(serial=serial)
-        except MTngfwException as e:
-            message.append(str(e))
-            return message
-        
-        # write the binary tsf to a file using ngfw hostname, serial number, and all numeric timestamp as a tar.gz file
-        filename = f"{ngfw.hostname}_{ngfw.serial_number}_{int(time.time())}.tar.gz"
-
-        with open(filename, "wb") as f:
-            f.write(tsf)
-
-        message.append(f"TSF file {filename} created")
 
         return message
