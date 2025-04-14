@@ -1,6 +1,6 @@
 # PanOS Master Tshooter
 
-PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information for PanOS NGFWs connected to a Panorama.  The intention is to provide a quick way to get runtime information from NGFWs by sending the commands through Panorama or directly to an NGFW.  Especially useful in an environment with many NGFWs connected to a single Panorama that have a lot of network and interface configurations (such as BGP, multi-vsys, multi-vr etc).  Not intended to replace any of the Panorama or NGFW functionality, but to provide a quick way to get information without having to log into each NGFW individually.
+PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information for PanOS NGFWs connected to a Panorama.  The intention is to provide a quick way to get runtime information from NGFWs by sending the commands through Panorama or directly to an NGFW.  Especially useful in an environment with many NGFWs connected to a single Panorama that have a lot of network and interface configurations (such as BGP, multi-vr etc).  Not intended to replace any of the Panorama or NGFW functionality, but to provide a quick way to get information without having to log into each NGFW individually.
 
 ## Version Changes
 
@@ -89,7 +89,6 @@ Here are the available command-line options for `mt-cli.py` (use --help for each
 - `update`: Update NGFW information (use with optional filters).
 - `show`: Display routes, virtual routers, interfaces, NGFWs, Panorama details, LLDP neighbors, BGP peers.
 - `fib-lookup`: Perform FIB Lookup for an IPv4 address.
-- `tsf`: Pull a tsf file from a NGFW.
 - `update-ha`: Update HA (High Availability) status.
 
 ## MT-CLI Examples
@@ -140,6 +139,17 @@ Here are some example commands to get you started:
   ```bash
   python mt-cli.py update-ha
   ```
+
+## Wishlist items for furture versions.
+- `userid`: UserID information such as agents, connectivity status etc.
+- `csv export`: Export things like 'routes' or 'arps' to a CSV formatt.
+- `IPv6`: Support IPv6 items.
+- `Logical Routers`: Supoort the PanOS logical routers and Advanced Routing Engine.
+- `More BGP`: Support more BGP detailed items.
+- `OSPF`: Support OSPF items such as neighbors.
+- `vsys aware`: Support vsys aware for router separation.
+- `Various CLI commands`: Support various CLI commands such as sessions or hardware status.
+- `Comma separated filters`: Support comma separated filters to target multiple items at once.
 
 # License
 
