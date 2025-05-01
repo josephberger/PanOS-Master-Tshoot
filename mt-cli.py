@@ -450,6 +450,18 @@ if __name__ == '__main__':
             parser_import = subparsers.add_parser("import", help="Import Panorama NGFWs (run before anything else if using Panoramas only)")
             parser_import.add_argument("--pan", type=str, default=None, help="Which Panorama to import")
 
+            # subcommand 'show'
+            parser_show = subparsers.add_parser("show", help="Show: routes, vrs, interfaces, ngfws, pans, lldp, bgp-peers")
+            parser_show.add_argument("option", help="routes, fibs, vrs, interfaces, ngfws, pan, lldp, bgp-peers, arps")
+            parser_show.add_argument("--pan", type=str, default=None, help="Filter Panorama (ngfws)")
+            parser_show.add_argument("--ngfw", type=str, default=None, help="Filter NGFW")
+            parser_show.add_argument("--vr", type=str, default=None, help="Filter virtual router")
+            parser_show.add_argument("--dst", type=str, default=None, help="Filter destination (fibs, routes)")
+            parser_show.add_argument("--flag", type=str, default=None, help="Filter comma separated flags (fibs, routes)")
+            parser_show.add_argument("--int", type=str, default=None, help="Filter interface (arps)")
+            parser_show.add_argument("--on-demand", action="store_true", help="On demand API call vs querying the database")
+            parser_show.add_argument("--yes", action="store_true", help="Do not prompt for on-demand confirmation")
+
         if inventory['NGFWs'] > 0:
             # subcommand 'refresh'
             parser_refresh = subparsers.add_parser("refresh", help="Refresh NGFW (no filter will refresh all NGFWs)")
@@ -463,18 +475,6 @@ if __name__ == '__main__':
             parser_update.add_argument("--vr", type=str, default=None, help="Which virtual router to update")
             parser_update.add_argument("--int", type=str, default=None, help="Which interface to update (arp)")
             parser_update.add_argument("--yes", action="store_true", help="Do not prompt for confirmation")
-
-            # subcommand 'show'
-            parser_show = subparsers.add_parser("show", help="Show: routes, vrs, interfaces, ngfws, pans, lldp, bgp-peers")
-            parser_show.add_argument("option", help="routes, fibs, vrs, interfaces, ngfws, pan, lldp, bgp-peers, arps")
-            parser_show.add_argument("--pan", type=str, default=None, help="Filter Panorama (ngfws)")
-            parser_show.add_argument("--ngfw", type=str, default=None, help="Filter NGFW")
-            parser_show.add_argument("--vr", type=str, default=None, help="Filter virtual router")
-            parser_show.add_argument("--dst", type=str, default=None, help="Filter destination (fibs, routes)")
-            parser_show.add_argument("--flag", type=str, default=None, help="Filter comma separated flags (fibs, routes)")
-            parser_show.add_argument("--int", type=str, default=None, help="Filter interface (arps)")
-            parser_show.add_argument("--on-demand", action="store_true", help="On demand API call vs querying the database")
-            parser_show.add_argument("--yes", action="store_true", help="Do not prompt for on-demand confirmation")
 
             # subcommand 'fib-lookup'
             parser_fib = subparsers.add_parser("fib-lookup", help="Perform FIB Lookup")

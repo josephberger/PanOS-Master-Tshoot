@@ -314,10 +314,12 @@ class MTBuilder:
         virtual_routers = session.query(VirtualRouter).join(VirtualRouter.ngfw).filter(Ngfw.serial_number == serial_number).all()
         bgp_peers = session.query(BGPPeer).join(BGPPeer.ngfw).filter(Ngfw.serial_number == serial_number).all()
         neighbors = session.query(Neighbor).join(Neighbor.ngfw).filter(Ngfw.serial_number == serial_number).all()
+        fibs = session.query(Fib).join(Fib.virtual_router).join(VirtualRouter.ngfw).filter(Ngfw.serial_number == serial_number).all()
+        arps = session.query(Arp).join(Arp.interface).join(Interface.virtual_router).join(VirtualRouter.ngfw).filter(Ngfw.serial_number == serial_number).all()
 
         
-        # delete the routes, interfaces, virtual routers, bgp peers and neighbors associated with the ngfw
-        delete_items = [routes, interfaces, virtual_routers, bgp_peers, neighbors]
+        # delete the routes, interfaces, virtual routers, bgp peers, neighbors, fibs, and arps associated with the ngfw
+        delete_items = [routes, interfaces, virtual_routers, bgp_peers, neighbors, fibs, arps]
 
         for item in delete_items:
             for i in item:
@@ -944,7 +946,10 @@ class MTController:
 
                 for r in results:
                     # set the zone
-                    r['zone'] = interface_list[r['interface']].zone
+                    for i in interface_list:
+                        if r['interface'] == i:
+                            r['zone'] = interface_list[i].zone
+                            break
                     # append to the formatted_arps list
                     formatted_arps.append(r)
 
