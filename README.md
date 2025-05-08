@@ -5,21 +5,25 @@ PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information f
 ## Version Changes
 
 **Commands**
-- Added `update` command for pulling or updating bgp-peers, routes, arps etc.
-- Changed `refresh` command to only include vrs and interfaces to establish basic infrastructure.
-- Changed `fib` to `fib-lookup`.
+- Added `show interfacesv6` which lists the ipv6 information for interfaces.
 
 **Items**
-- Arp Table
-- FIB Table (IPv4 only and included with `update routes`)
+- log file `mt-cli.log` is now created in the same directory as the script.  Log customization is not available yet.
 
 **TSF Command BETA**
-- Added `tsf` command for pulling a tsf file from a NGFW.
-- Only works with NGFWs directly connected to mt-cli (can still be managed by Porama but not imported into MT).
-- Panorama not supported.
+- Removed
+
+**IPv6 Support**
+- Added IPv6 support for `show routes`, `show fibs`, `show interfacesv6`, `show bgp-peers` and `fib-lookup` commands.
+- Full testing of IPv6 support is not complete, please report any issues.
+
+**Advanced Routing Engine (ARE) Support**
+- Added support for Advanced Routing Engine (ARE).
+- Existing commands adapt to the ARE such as `show routes`, `show fibs`, and `show bgp-peers` commands.
+- Full testing of ARE support is not complete, please report any issues.
 
 **General Code Cleanup**
-- Extensive code cleanup and refactoring.
+- Extensive code cleanup and refactoring via Gemini.
 
 ## Introduction
 
@@ -67,7 +71,6 @@ python mt-cli.py refresh --ngfw <NGFW_NAME>
 6. Recommend NOT utilizing on central server, intention is to run on workstation or jump host.
 7. Currently only supports IPv4, IPv6 support coming soon.
 8. For ease of use, most queries are based on hostnames once added/imported.  If you have multiple NGFWs with the same hostname, MT will add a `-1` to the back of the hostname.
-9. Probably some bugs and vulns.  Please report and they will be addressed in the next version.
 
 ## MT-CLI Usage
 To use `mt-cli.py`, open your terminal and navigate to the directory containing the script. Then, you can execute various commands with the following syntax:
@@ -143,11 +146,12 @@ Here are some example commands to get you started:
 ## Wishlist items for furture versions.
 - `userid`: UserID information such as agents, connectivity status etc.
 - `csv export`: Export things like 'routes' or 'arps' to a CSV formatt.
-- `IPv6`: Support IPv6 items.
-- `Logical Routers`: Supoort the PanOS logical routers and Advanced Routing Engine.
+- `IPv6`: Support IPv6 items. (IPv6 support is in testing)
+- `Logical Routers`: Supoort the PanOS logical routers and Advanced Routing Engine (ARE). (ARE support is in testing)
 - `More BGP`: Support more BGP detailed items.
 - `OSPF`: Support OSPF items such as neighbors.
 - `vsys aware`: Support vsys aware for router separation.
+- `Credential Update`: Update credentials for Panorama and NGFWs.
 - `Various CLI commands`: Support various CLI commands such as sessions or hardware status.
 - `Comma separated filters`: Support comma separated filters to target multiple items at once.
 
