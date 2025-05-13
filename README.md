@@ -6,6 +6,7 @@ PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information f
 
 **Commands**
 - Added `show interfacesv6` which lists the ipv6 information for interfaces.
+- Added `--details` option to `show routes` command to show more details about NGFWs and Panorama.
 
 **Items**
 - log file `mt-cli.log` is now created in the same directory as the script.  Log customization is not available yet.

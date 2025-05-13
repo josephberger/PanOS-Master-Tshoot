@@ -144,6 +144,7 @@ class MTController:
         Returns:
             list | None: List of device dictionaries from API, or None on error.
         """
+        logging.info(f"Fetching devices from Panorama {panorama_obj.hostname} via API...")
         try:
             mtp = MTpanorama(panorama=panorama_obj, timeout=self.timeout)
             devices_api = mtp.show_devices()
@@ -162,6 +163,7 @@ class MTController:
         Returns:
             dict | None: System info dictionary ('system' key) from API, or None on error.
         """
+        logging.info(f"Fetching system info from NGFW {ngfw_obj.hostname} via API...")
         try:
             mtd = MTngfw(ngfw=ngfw_obj, timeout=self.timeout)
             system_info = mtd.show_system_info()
@@ -180,6 +182,7 @@ class MTController:
         Returns:
             list | None: List of virtual router name strings, or None on error.
         """
+        logging.info(f"Fetching virtual router names from NGFW {ngfw_obj.hostname} via API...")
         try:
             mtd = MTngfw(ngfw=ngfw_obj, timeout=self.timeout)
             vr_names_api = mtd.show_virtual_routes()
@@ -199,6 +202,7 @@ class MTController:
         Returns:
             list | None: List of interface dictionaries from API, or None on error.
         """
+        logging.info(f"Fetching interfaces from NGFW {ngfw_obj.hostname} via API...")
         try:
             mtd = MTngfw(ngfw=ngfw_obj, timeout=self.timeout)
             interfaces_api = mtd.show_interfaces(virtual_router=virtual_router)
@@ -220,6 +224,7 @@ class MTController:
         Returns:
             list | None: List of route dictionaries from API, or None on error.
         """
+        logging.info(f"Fetching routes from NGFW {ngfw_obj.hostname} via API...")
         try:
             mtd = MTngfw(ngfw=ngfw_obj, timeout=self.timeout)
             routes_api = mtd.show_routes(virtual_router=virtual_router, dst=destination, flags=flags)
@@ -241,6 +246,7 @@ class MTController:
         Returns:
             list | None: List of FIB dictionaries from API, or None on error.
         """
+        logging.info(f"Fetching FIBs from NGFW {ngfw_obj.hostname} via API...")
         try:
             mtd = MTngfw(ngfw=ngfw_obj, timeout=self.timeout)
             fibs_api = mtd.show_fibs(virtual_router=virtual_router, dst=destination, flags=flags)
@@ -260,6 +266,7 @@ class MTController:
         Returns:
             list | None: List of BGP peer dictionaries from API, or None on error.
         """
+        logging.info(f"Fetching BGP peers from NGFW {ngfw_obj.hostname} via API...")
         try:
             mtd = MTngfw(ngfw=ngfw_obj, timeout=self.timeout)
             bgp_peers_api = mtd.show_bgp_peers(virtual_router=virtual_router)
@@ -279,6 +286,7 @@ class MTController:
         Returns:
             list | None: List of ARP dictionaries from API, or None on error.
         """
+        logging.info(f"Fetching ARPs from NGFW {ngfw_obj.hostname} via API...")
         try:
             mtd = MTngfw(ngfw=ngfw_obj, timeout=self.timeout)
             arps_api = mtd.show_arps(interface=interface)
@@ -297,6 +305,7 @@ class MTController:
         Returns:
             list | None: List of neighbor dictionaries from API, or None on error.
         """
+        logging.info(f"Fetching LLDP neighbors from NGFW {ngfw_obj.hostname} via API...")
         try:
             mtd = MTngfw(ngfw=ngfw_obj, timeout=self.timeout)
             neighbors_api = mtd.show_neighbors()
@@ -317,6 +326,7 @@ class MTController:
         Returns:
             dict | None: Parsed result dictionary from the API test, or None on error.
         """
+        logging.info(f"Performing FIB lookup test on {ngfw_obj.hostname}/{vr_name} for IP {ip_address}...")
         try:
             # Instantiate the device handler
             mtd = MTngfw(ngfw=ngfw_obj, timeout=self.timeout)
@@ -348,6 +358,7 @@ class MTController:
         Returns:
             dict | None: HA state dictionary from API, or None on error.
         """
+        logging.info(f"Fetching HA state from Panorama {panorama_obj.hostname} via API...")
         try:
             mtp = MTpanorama(panorama=panorama_obj, timeout=self.timeout)
             ha_info = mtp.show_ha_state()
@@ -366,6 +377,7 @@ class MTController:
         Returns:
             dict | None: HA status dictionary from API, or None on error.
         """
+        logging.info(f"Fetching HA status from NGFW {ngfw_obj.hostname} via API...")
         try:
             mtd = MTngfw(ngfw=ngfw_obj, timeout=self.timeout)
             ha_info = mtd.show_ha_status()
@@ -602,18 +614,38 @@ class MTController:
             dict: A dictionary with standardized keys and formatted values.
         """
         if not ngfw_obj: return {}
+
         return {
-            'hostname': ngfw_obj.hostname, 'serial_number': ngfw_obj.serial_number,
-            'ip_address': ngfw_obj.ip_address or '', 'model': ngfw_obj.model or '',
-            'alt_serial': ngfw_obj.alt_serial or '', 'alt_ip': ngfw_obj.alt_ip or '',
+            'hostname': ngfw_obj.hostname or '', 
+            'serial_number': ngfw_obj.serial_number or '',
+            'ip_address': ngfw_obj.ip_address or '', 
+            'model': ngfw_obj.model or '',
+            'alt_serial': ngfw_obj.alt_serial or '', 
+            'alt_ip': ngfw_obj.alt_ip or '',
             'active': 'yes' if ngfw_obj.active else 'no',
-            'panorama': ngfw_obj.panorama.hostname if ngfw_obj.panorama else 'Standalone',
+            'panorama': ngfw_obj.panorama.hostname if ngfw_obj.panorama else '',
             'last_update': ngfw_obj.last_update or 'Never',
+            'advanced_routing_enabled': 'yes' if ngfw_obj.advanced_routing_enabled else 'no', # Assuming you want this key
+            # New fields, accessing attributes from the ngfw_obj (database model instance)
+            # The database model (db.py Ngfw class) uses these exact attribute names.
+            # Default to empty string if the DB field is None or empty.
+            'ipv6_address': ngfw_obj.ipv6_address or '',
+            'mac_address': ngfw_obj.mac_address or '',
+            'uptime': ngfw_obj.uptime or '',
+            'sw_version': ngfw_obj.sw_version or '',
+            'app_version': ngfw_obj.app_version or '',
+            'av_version': ngfw_obj.av_version or '',
+            'wildfire_version': ngfw_obj.wildfire_version or '',
+            'threat_version': ngfw_obj.threat_version or '',
+            'url_filtering_version': ngfw_obj.url_filtering_version or '',
+            'device_cert_present': ngfw_obj.device_cert_present or '',
+            'device_cert_expiry_date': ngfw_obj.device_cert_expiry_date or ''
         }
 
     def _format_panorama_result(self, pan_obj) -> dict:
         """
-        Formats a Panorama DB object into the standard result structure.
+        Formats a Panorama DB object into the standard result structure,
+        including all new extended system information fields.
 
         Args:
             pan_obj (Panorama): A Panorama SQLAlchemy object.
@@ -621,14 +653,55 @@ class MTController:
         Returns:
             dict: A dictionary with standardized keys and formatted values.
         """
-        if not pan_obj: return {}
-        # Assumes ngfws relationship was eagerly loaded for count
-        ngfw_count = len(pan_obj.ngfws) if hasattr(pan_obj, 'ngfws') else \
-                     self._Session().query(Ngfw).filter(Ngfw.panorama_id == pan_obj.id).count() # Fallback count query
+        if not pan_obj: 
+            return {}
+        
+        # NGFW count - existing logic
+        # Ensure session is available if pan_obj.ngfws is not already loaded
+        # For simplicity, assuming eager loading or that a session will be active if needed.
+        # If pan_obj.ngfws is not loaded by default and you are in a detached state,
+        # this count might need a session.
+        ngfw_count = 0
+        if hasattr(pan_obj, 'ngfws') and pan_obj.ngfws is not None: # Check if relationship is loaded
+            ngfw_count = len(pan_obj.ngfws)
+        else:
+            # Fallback if not loaded, requires an active session or passing one
+            # This is a simplified fallback; ideally, the session context should be managed.
+            # For now, let's assume the primary path is that 'ngfws' is loaded or this is called
+            # within a context where pan_obj is session-aware.
+            # If issues arise, pass session to this formatter.
+            try:
+                current_session = Session.object_session(pan_obj)
+                if current_session:
+                    ngfw_count = current_session.query(Ngfw).filter(Ngfw.panorama_id == pan_obj.id).count()
+                else: # Fallback if no session found, less reliable
+                    pass # ngfw_count remains 0 or you might want to log a warning
+            except Exception:
+                pass # ngfw_count remains 0
+
         return {
-            'hostname': pan_obj.hostname, 'serial_number': pan_obj.serial_number,
-            'ip_address': pan_obj.ip_address, 'alt_ip': pan_obj.alt_ip or "",
-            'active': 'yes' if pan_obj.active else 'no', 'ngfws': ngfw_count
+            # Existing fields
+            'hostname': pan_obj.hostname or '', 
+            'serial_number': pan_obj.serial_number or '',
+            'ip_address': pan_obj.ip_address or '', 
+            'alt_ip': pan_obj.alt_ip or '',
+            'active': 'yes' if pan_obj.active else 'no', 
+            'ngfws': ngfw_count, # Number of managed NGFWs
+
+            # New fields from db.py Panorama model
+            'mac_address': pan_obj.mac_address or '',
+            'uptime': pan_obj.uptime or '',
+            'model': pan_obj.model or '',
+            'sw_version': pan_obj.sw_version or '',
+            'app_version': pan_obj.app_version or '',
+            'av_version': pan_obj.av_version or '',
+            'wildfire_version': pan_obj.wildfire_version or '',
+            'logdb_version': pan_obj.logdb_version or '',
+            'system_mode': pan_obj.system_mode or '',
+            'licensed_device_capacity': pan_obj.licensed_device_capacity or '',
+            'device_certificate_status': pan_obj.device_certificate_status or '',
+            'ipv6_address': pan_obj.ipv6_address or '',
+            'last_system_info_refresh': pan_obj.last_system_info_refresh or 'Never'
         }
 
     def _format_vr_result(self, vr_obj, include_counts=True, session=None) -> dict:
@@ -861,6 +934,7 @@ class MTController:
 
     def get_inventory(self) -> dict:
         """ Returns counts of various object types currently stored in the database. """
+        logging.debug("Retrieving inventory counts from the database.")
         inventory = {}
         try:
             with self._Session() as session:
@@ -879,6 +953,7 @@ class MTController:
 
     def import_panorama_devices(self, pan_filter=None) -> list:
         """ Imports NGFW details from associated Panoramas into the database. """
+        logging.info(f"Starting import of Panorama devices. Panorama filter: '{pan_filter if pan_filter else 'All'}'")
         messages = []
         try:
             with self._Session() as session:
@@ -919,9 +994,59 @@ class MTController:
                                 skipped_count += 1; continue # Skip non-active HA peers reported by Panorama
                             if ha_info: alt_serial = ha_info.get('peer', {}).get('serial') or None
 
-                            ngfw_data = { 'hostname': hostname, 'serial_number': serial, 'ip_address': device_data.get('ip-address'),
-                                          'model': device_data.get('model'), 'panorama_id': panorama_obj.id, 'active': active,
-                                          'alt_serial': alt_serial, 'alt_ip': None, 'api_key': None, 'last_update': None }
+                            # -- Check for Advanced Routing (if applicable) --
+                            # ensure field exists in device_data before checking value
+                            advanced_routing = False
+                            if 'advanced-routing' in device_data:
+                                if device_data['advanced-routing'] == 'yes':
+                                    advanced_routing = True
+
+                            # --- Start NEW field extraction (Identical to previous correct version) ---
+                            ipv6_address_val = device_data.get('ipv6-address', '')
+                            if str(ipv6_address_val).lower() in ['unknown', 'none']: ipv6_address_val = ''
+                            
+                            mac_address_val = device_data.get('mac-addr', '')
+                            uptime_val = device_data.get('uptime', '')
+                            sw_version_val = device_data.get('sw-version', '')
+                            app_version_val = device_data.get('app-version', '')
+                            av_version_val = device_data.get('av-version', '')
+                            wildfire_version_val = device_data.get('wildfire-version', '')
+                            threat_version_val = device_data.get('threat-version', '')
+                            url_filtering_version_val = device_data.get('url-filtering-version', '')
+                            
+                            device_cert_present_val = device_data.get('device-cert-present', '')
+                            if str(device_cert_present_val).lower() == 'none': device_cert_present_val = ''
+                                
+                            device_cert_expiry_date_val = device_data.get('device-cert-expiry-date', '')
+                            if str(device_cert_expiry_date_val).lower() == 'n/a': device_cert_expiry_date_val = ''
+                            # --- End NEW field extraction ---
+
+                            ngfw_data = {
+                                'hostname': hostname, 
+                                'serial_number': serial, 
+                                'ip_address': device_data.get('ip-address',''), 
+                                'model': device_data.get('model',''), 
+                                'panorama_id': panorama_obj.id, 
+                                'active': active, # From original HA logic
+                                'alt_serial': alt_serial, # From original HA logic
+                                'alt_ip': None, 
+                                'api_key': None, 
+                                'advanced_routing_enabled': advanced_routing,
+                                'last_update': None,
+                                # Add the new fields
+                                'ipv6_address': ipv6_address_val,
+                                'mac_address': mac_address_val,
+                                'uptime': uptime_val,
+                                'sw_version': sw_version_val,
+                                'app_version': app_version_val,
+                                'av_version': av_version_val,
+                                'wildfire_version': wildfire_version_val,
+                                'threat_version': threat_version_val,
+                                'url_filtering_version': url_filtering_version_val,
+                                'device_cert_present': device_cert_present_val,
+                                'device_cert_expiry_date': device_cert_expiry_date_val
+                            }
+
                             new_ngfw = Ngfw(**ngfw_data)
                             session.add(new_ngfw)
                             existing_serials.add(serial)
@@ -940,6 +1065,7 @@ class MTController:
 
     def refresh_ngfws(self, ngfw_filter=None) -> list:
         """ Refreshes basic info (VRs, Interfaces including IPv6 flag and addresses) for specified NGFWs via API. """
+        logging.info(f"Starting NGFW refresh. NGFW filter: '{ngfw_filter if ngfw_filter else 'All'}'")
         messages = []
         try:
             with self._Session() as session:
@@ -1182,6 +1308,7 @@ class MTController:
 
     def get_routes(self, ngfw=None, virtual_router=None, destination=None, flags=None, on_demand=False, afi='ipv4') -> dict:
         """ Retrieves routing table information, filtered by Address Family Indicator (AFI). """
+        logging.info(f"Fetching routes. NGFW: '{ngfw}', VR: '{virtual_router}', Dest: '{destination}', Flags: '{flags}', On-demand: {on_demand}, AFI: {afi}")
         response = {'message': [], 'results': None}
         formatted_results = []
         try:
@@ -1554,12 +1681,20 @@ class MTController:
         formatted_results = []
         try:
             with self._Session() as session:
-                panoramas_db = session.query(Panorama).options(joinedload(Panorama.ngfws)).all() # Eager load for count
-                if not panoramas_db: response['message'].append("No Panoramas found in database."); return response
+                # Eager load 'ngfws' relationship to assist with the count in _format_panorama_result
+                panoramas_db = session.query(Panorama).options(joinedload(Panorama.ngfws)).all()
+                if not panoramas_db: 
+                    response['message'].append("No Panoramas found in database.")
+                    return response
+                # _format_panorama_result is called here, which now includes ALL new fields
                 formatted_results = [self._format_panorama_result(p) for p in panoramas_db]
-            if formatted_results: response['results'] = formatted_results
-        except sqlalchemy_exc.SQLAlchemyError as db_err: raise MTControllerException(f"DB error getting Panoramas: {db_err}")
-        except Exception as e: raise MTControllerException(f"Unexpected error getting Panoramas: {e}")
+            
+            if formatted_results: 
+                response['results'] = formatted_results
+        except sqlalchemy_exc.SQLAlchemyError as db_err: 
+            raise MTControllerException(f"DB error getting Panoramas: {db_err}")
+        except Exception as e: 
+            raise MTControllerException(f"Unexpected error getting Panoramas: {e}")
         return response
 
     # ==========================================================================
@@ -1571,6 +1706,7 @@ class MTController:
             Updates routes and FIBs (IPv4 & IPv6) in the database using API data,
             including zone enrichment before saving.
             """
+            logging.info(f"Starting update_routes. NGFW filter: '{ngfw if ngfw else 'All'}', VR filter: '{virtual_router if virtual_router else 'All'}'")
             messages = []
             try:
                 # Start a database session that covers the entire update process for an NGFW
@@ -1714,6 +1850,7 @@ class MTController:
 
     def update_arps(self, ngfw=None, interface=None) -> list:
         """ Updates ARP entries in the database using API data. """
+        logging.info(f"Starting update_arps. NGFW filter: '{ngfw if ngfw else 'All'}', Interface filter: '{interface if interface else 'All'}'")
         messages = []
         try:
             with self._Session() as session:
@@ -1753,6 +1890,7 @@ class MTController:
 
     def update_neighbors(self, ngfw=None) -> list:
         """ Updates LLDP neighbors in the database using API data. """
+        logging.info(f"Starting update_neighbors. NGFW filter: '{ngfw if ngfw else 'All'}'")
         messages = []
         try:
             with self._Session() as session:
@@ -1785,6 +1923,7 @@ class MTController:
 
     def update_bgp_peers(self, ngfw=None, virtual_router=None) -> list:
         """ Updates BGP peers in the database using API data. """
+        logging.info(f"Starting update_bgp_peers. NGFW filter: '{ngfw if ngfw else 'All'}', VR filter: '{virtual_router if virtual_router else 'All'}'")
         messages = []
         try:
             with self._Session() as session:
@@ -1824,6 +1963,7 @@ class MTController:
 
     def test_fib_lookup(self, ip_address, vr_query=None, ngfw_query=None) -> dict:
         """ Performs an on-demand FIB lookup test via API. """
+        logging.info(f"Performing on-demand FIB lookup test. IP: {ip_address}, NGFW: '{ngfw_query}', VR: '{vr_query}'")
         response = {'message': [], 'results': None}
         formatted_results = []
 
@@ -1902,6 +2042,7 @@ class MTController:
             Raises:
                 MTControllerException: If the provided IP address string is invalid or a database error occurs.
             """
+            logging.info(f"Calculating FIB lookup from DB. IP: {ip_address_str}, NGFW: '{ngfw_query}', VR: '{vr_query}'")
             response = {'message': [], 'results': None}
             formatted_results = []
 
@@ -2007,7 +2148,7 @@ class MTController:
 
     def update_ha_status(self, ngfw_filter=None, pan_filter=None) -> list:
         """ Updates HA status in the database using API data. """
-        # (Implementation remains the same - uses API helpers)
+        logging.info(f"Starting HA status update. NGFW filter: '{ngfw_filter if ngfw_filter else 'All'}', Panorama filter: '{pan_filter if pan_filter else 'All'}'")
         messages = []
         updated_devices = []
         try:

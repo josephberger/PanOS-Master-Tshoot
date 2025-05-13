@@ -21,7 +21,8 @@
 # SOFTWARE.
 
 # Standard library imports (if any needed specifically for builder)
-# (None seem required here beyond what dependencies bring in)
+import datetime
+import logging
 
 # Third-party imports
 import pan.xapi
@@ -41,7 +42,7 @@ try:
     from config import db_uri, timeout
 except ImportError:
     # Provide default fallbacks or raise a more specific error if config is mandatory
-    print("Warning: Could not import db_uri and timeout from config. Using defaults or potentially failing.")
+    logging.warning("Warning: Could not import db_uri and timeout from config. Using defaults or potentially failing.")
     db_uri = 'sqlite:///master_tshoot.db' # Example fallback
     timeout = 5 # Example fallback
 
@@ -112,6 +113,8 @@ class MTBuilder:
             MTBuilderException: If there's an error interacting with the database engine
                                 during schema creation or verification.
         """
+        logging.info("Attempting to build database schema.")
+
         try:
             # Use the engine created during initialization
             # create_all checks for table existence and only creates missing ones.
@@ -144,6 +147,8 @@ class MTBuilder:
                                 if the API response format is unexpected,
                                 or if a database error occurs during the add operation.
         """
+        logging.info(f"Attempting to add Panorama with IP: {ip_address}")
+
         # Use context manager for the session to ensure it's closed properly
         try:
             with self._Session() as session: # Create session from factory
@@ -189,7 +194,29 @@ class MTBuilder:
                         # Simple approach: append first 4 chars of serial to make unique.
                         original_hostname = hostname
                         hostname = f"{hostname}-{serial[:4]}"
-                        print(f"Warning: Hostname '{original_hostname}' already exists. Using '{hostname}' instead.")
+                        logging.warningt(f"Warning: Hostname '{original_hostname}' already exists. Using '{hostname}' instead.")
+
+                    # --- Extract new fields for Panorama from system_info_dict ---
+                    mac_address_val = system_info.get('mac-address', '')
+                    uptime_val = system_info.get('uptime', '')
+                    model_val = system_info.get('model', '') # From <model>Panorama</model>
+                    sw_version_val = system_info.get('sw-version', '')
+                    app_version_val = system_info.get('app-version', '')
+                    av_version_val = system_info.get('av-version', '')
+                    wildfire_version_val = system_info.get('wildfire-version', '')
+                    logdb_version_val = system_info.get('logdb-version', '')
+                    # system_mode_val is already extracted above
+                    
+                    licensed_device_cap_val = system_info.get('licensed-device-capacity', '')
+                    
+                    device_cert_status_val = system_info.get('device-certificate-status', '')
+                    if str(device_cert_status_val).lower() == 'none': device_cert_status_val = ''
+                    
+                    ipv6_address_val = system_info.get('ipv6-address', '')
+                    if str(ipv6_address_val).lower() in ['unknown', 'none']: ipv6_address_val = ''
+                    
+                    last_refresh_ts = datetime.datetime.now().isoformat(timespec='seconds')
+                    # --- End new field extraction ---
 
 
                     # Get High Availability (HA) information
@@ -218,7 +245,7 @@ class MTBuilder:
 
                     except (pan.xapi.PanXapiError, KeyError, TypeError) as ha_e:
                          # Treat failure to get HA info (or parse it) as non-HA for simplicity
-                         print(f"Warning: Could not retrieve or parse HA info for {ip_address} (Error: {ha_e}). Assuming non-HA or active.")
+                         logging.warningt(f"Warning: Could not retrieve or parse HA info for {ip_address} (Error: {ha_e}). Assuming non-HA or active.")
                          active = True
                          alt_ip = None
 
@@ -237,13 +264,28 @@ class MTBuilder:
                      raise MTBuilderException(f"Unexpected API response format from {ip_address} (Error: {e}). Check device type and API version.")
                 # --- End API Call Logic ---
 
-                # Create and add the new Panorama object to the session
-                new_panorama = Panorama(hostname=hostname,
-                                        serial_number=serial,
-                                        ip_address=ip_address, # IP used for the initial connection
-                                        alt_ip=alt_ip,
-                                        active=active,
-                                        api_key=xapi.api_key) # Store the generated API key
+                new_panorama = Panorama(
+                    hostname=hostname,
+                    serial_number=serial,
+                    ip_address=ip_address, 
+                    alt_ip=alt_ip,
+                    active=active,
+                    api_key=xapi.api_key,
+                    # Populate new fields
+                    mac_address=mac_address_val,
+                    uptime=uptime_val,
+                    model=model_val,
+                    sw_version=sw_version_val,
+                    app_version=app_version_val,
+                    av_version=av_version_val,
+                    wildfire_version=wildfire_version_val,
+                    logdb_version=logdb_version_val,
+                    system_mode=system_mode,
+                    licensed_device_capacity=licensed_device_cap_val,
+                    device_certificate_status=device_cert_status_val,
+                    ipv6_address=ipv6_address_val,
+                    last_system_info_refresh=last_refresh_ts
+                )
 
                 session.add(new_panorama)
                 session.commit() # Commit the transaction
@@ -275,6 +317,8 @@ class MTBuilder:
                                 API communication fails, the API response is unexpected,
                                 or a database error occurs.
         """
+        logging.info(f"Attempting to add NGFW with IP: {ip_address}")
+
         try:
             with self._Session() as session:
                 # Check if NGFW already exists by primary or alternate IP address
@@ -312,6 +356,31 @@ class MTBuilder:
                     advanced_routing = True if str(are_status_raw).lower() == 'on' else False
                     # ----------------------------------
 
+                    # --- Extract all requested fields ---
+                    ipv6_address_val = device_info.get('ipv6-address', '')
+                    if str(ipv6_address_val).lower() in ['unknown', 'none']: ipv6_address_val = ''
+                    
+                    mac_address_val = device_info.get('mac-address', device_info.get('mac_addr', ''))
+                    
+                    uptime_val = device_info.get('uptime', '')
+                    sw_version_val = device_info.get('sw-version', '')
+                    
+                    app_version_val = device_info.get('app-version', '')
+                    av_version_val = device_info.get('av-version', '')
+                    wildfire_version_val = device_info.get('wildfire-version', '')
+                    threat_version_val = device_info.get('threat-version', '')
+                    url_filtering_version_val = device_info.get('url-filtering-version', '')
+
+                    # Use 'device-certificate-status' from the direct NGFW output for 'device_cert_present' field
+                    device_cert_present_val = device_info.get('device-certificate-status', '') 
+                    if str(device_cert_present_val).lower() == 'none': device_cert_present_val = ''
+                        
+                    # 'device-cert-expiry-date' is not in the direct NGFW sample, so it will default to ''
+                    device_cert_expiry_date_val = device_info.get('device-cert-expiry-date', '') 
+                    if str(device_cert_expiry_date_val).lower() == 'n/a': device_cert_expiry_date_val = ''
+                    # --- End field extraction ---
+
+
                     # Check if NGFW with this serial or alternate serial already exists
                     existing_serial = session.query(Ngfw).filter(
                          (Ngfw.serial_number == serial) | (Ngfw.alt_serial == serial)
@@ -324,7 +393,7 @@ class MTBuilder:
                     if hostname in existing_hostnames:
                          original_hostname = hostname
                          hostname = f"{hostname}-{serial[:4]}" # Append first 4 of serial
-                         print(f"Warning: Hostname '{original_hostname}' already exists. Using '{hostname}' instead.")
+                         logging.warningt(f"Warning: Hostname '{original_hostname}' already exists. Using '{hostname}' instead.")
 
 
                     # Get High Availability (HA) information
@@ -356,7 +425,7 @@ class MTBuilder:
                         # else: HA not enabled, keep defaults
                     except (pan.xapi.PanXapiError, KeyError, TypeError) as ha_e:
                          # Treat failure to get HA info as non-HA
-                         print(f"Warning: Could not retrieve or parse HA info for {ip_address} (Error: {ha_e}). Assuming non-HA or active.")
+                         logging.warningt(f"Warning: Could not retrieve or parse HA info for {ip_address} (Error: {ha_e}). Assuming non-HA or active.")
                          active = True
                          alt_serial = None
                          alt_ip = None
@@ -377,17 +446,22 @@ class MTBuilder:
 
                 # Prepare NGFW data dictionary
                 ngfw_info = {
-                    'hostname': hostname,
-                    'serial_number': serial,
-                    'ip_address': ip_address, # Primary IP used for connection
-                    'model': model,
-                    'api_key': xapi.api_key, # Store API key obtained from direct connection
-                    'panorama_id': None, # Mark as Standalone
-                    'active': active,
-                    'alt_serial': alt_serial,
-                    'alt_ip': alt_ip,
-                    'advanced_routing_enabled': advanced_routing,
-                    'last_update': None # No data refreshed yet
+                    'hostname': hostname, 'serial_number': serial, 'ip_address': ip_address, 
+                    'model': model, 'api_key': xapi.api_key, 'panorama_id': None, 
+                    'active': active, 'alt_serial': alt_serial, 'alt_ip': alt_ip,
+                    'advanced_routing_enabled': advanced_routing, 'last_update': None,
+                    # Add all the new fields
+                    'ipv6_address': ipv6_address_val,
+                    'mac_address': mac_address_val,
+                    'uptime': uptime_val,
+                    'sw_version': sw_version_val,
+                    'app_version': app_version_val,
+                    'av_version': av_version_val,
+                    'wildfire_version': wildfire_version_val,
+                    'threat_version': threat_version_val,
+                    'url_filtering_version': url_filtering_version_val,
+                    'device_cert_present': device_cert_present_val, # Now correctly uses device-certificate-status
+                    'device_cert_expiry_date': device_cert_expiry_date_val # Will be '' if not found
                 }
 
                 # Create and add the new NGFW object
@@ -417,6 +491,8 @@ class MTBuilder:
         Raises:
             MTBuilderException: If the Panorama is not found or a database error occurs during deletion.
         """
+        logging.info(f"Attempting to delete Panorama with serial number: {serial_number}")
+
         messages = []
         try:
             with self._Session() as session:
@@ -463,6 +539,8 @@ class MTBuilder:
         Raises:
             MTBuilderException: If the NGFW is not found or a database error occurs during deletion.
         """
+        logging.info(f"Attempting to delete NGFW with serial number: {serial_number}")
+
         try:
             with self._Session() as session:
                 # Find the NGFW by serial number
@@ -474,7 +552,7 @@ class MTBuilder:
 
                 hostname = ngfw_to_delete.hostname # Store for message before deletion
 
-                print(f"Deleting NGFW '{hostname}' ({serial_number}) and all associated data (using cascade delete)...")
+                logging.info(f"Deleting NGFW '{hostname}' ({serial_number}) and all associated data (using cascade delete)...")
 
                 # Delete the NGFW object. SQLAlchemy, using the cascade rules defined in db.py,
                 # will handle deleting associated VirtualRouters, Neighbors, BGP Peers,
@@ -483,7 +561,7 @@ class MTBuilder:
                 session.commit() # Commit the deletion
 
                 # Consistent success message with CLI
-                return f"NGFW '{hostname}' ({serial_number}) and associated data successfully deleted from database."
+                logging.info(f"NGFW '{hostname}' ({serial_number}) and associated data successfully deleted from database.")
 
         except sqlalchemy_exc.SQLAlchemyError as db_err:
             session.rollback() # Rollback on error

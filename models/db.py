@@ -35,17 +35,31 @@ class Panorama(Base):
 
     id = Column(Integer, primary_key=True)
     hostname = Column(String)
-    serial_number = Column(String, unique=True) # Added unique constraint
+    serial_number = Column(String, unique=True) 
     ip_address = Column(String)
-    alt_ip = Column(String)
+    alt_ip = Column(String, default='') # Ensure defaults for existing optional fields
     active = Column(Boolean, default=True)
     api_key = Column(Text)
 
-    # Establish the one-to-many relationship with Ngfw
-    # Added cascade delete: Deleting a Panorama will delete its associated NGFWs.
+    # New fields to be added
+    mac_address = Column(String, default='')
+    uptime = Column(String, default='')
+    model = Column(String, default='')
+    sw_version = Column(String, default='')
+    app_version = Column(String, default='')
+    av_version = Column(String, default='')
+    wildfire_version = Column(String, default='')
+    logdb_version = Column(String, default='')
+    system_mode = Column(String, default='')
+    licensed_device_capacity = Column(String, default='') # Storing as string for flexibility
+    device_certificate_status = Column(String, default='')
+    ipv6_address = Column(String, default='') # Added for consistency
+    last_system_info_refresh = Column(String, default='') # Timestamp
+
     ngfws = relationship('Ngfw',
                          back_populates='panorama',
                          cascade="all, delete-orphan")
+
 
 class Ngfw(Base):
     """
@@ -65,6 +79,19 @@ class Ngfw(Base):
     api_key = Column(Text, default=None)
     last_update = Column(String, default=None)
 
+    # New fields to be added
+    ipv6_address = Column(String, default='')
+    mac_address = Column(String, default='')
+    uptime = Column(String, default='')
+    sw_version = Column(String, default='')
+    app_version = Column(String, default='')
+    av_version = Column(String, default='')
+    wildfire_version = Column(String, default='')
+    threat_version = Column(String, default='')
+    url_filtering_version = Column(String, default='')
+    device_cert_present = Column(String, default='') # Based on XML, could be "None" or other statuses
+    device_cert_expiry_date = Column(String, default='') # Based on XML, could be "N/A"
+
     # ForeignKey to associate with Panorama
     panorama_id = Column(Integer, ForeignKey('panorama.id'))
 
@@ -83,7 +110,6 @@ class Ngfw(Base):
     # Defining cascade here might be redundant or cause issues if a BGPPeer
     # could exist without a VR (unlikely).
     bgp_peers = relationship('BGPPeer', back_populates='ngfw')
-
 
 class VirtualRouter(Base):
     """

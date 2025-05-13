@@ -7,18 +7,21 @@ import logging
 import sqlalchemy.exc
 
 # Configuration and backend imports
-from config import db_uri, timeout
+from config import db_uri, timeout, log_level, log_file, log_to_terminal
 from mastertshoot.mt_controller import MTController, MTControllerException, MTDatabaseSchemaError
 from mastertshoot.mt_builder import MTBuilder, MTBuilderException
 
 # Basic logging setup
+log_handlers = [logging.FileHandler(log_file)]
+
+# Conditionally add StreamHandler for terminal output
+if log_to_terminal:
+    log_handlers.append(logging.StreamHandler(sys.stdout))
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=getattr(logging, log_level.upper(), logging.INFO),
     format='%(asctime)s - %(levelname)s - %(message)s',
-    handlers=[
-        #logging.StreamHandler(sys.stdout),  # Output to console
-        logging.FileHandler('mt-cli.log')  # Log to file
-    ]
+    handlers=log_handlers #
 )
 
 # ==============================================================================
@@ -80,11 +83,55 @@ HDR_ALT_SERIAL = "Alt Serial"
 HDR_ACTIVE = "Active"
 HDR_PANORAMA = "Panorama"
 HDR_LAST_REFRESH = "Last Refresh"
+HDR_ARE = "ARE"
 HDR_ALT_IP = "Alt IP"
 HDR_NGFW_COUNT = "NGFWs"
 HDR_IPV6_PRESENT = "IPv6"
 HDR_IPV6_ADDRESSES = "IPv6 Addresses"
 
+# Labels for display
+LBL_HOSTNAME = "Hostname"
+LBL_SERIAL = "Serial Number"
+LBL_IP_ADDRESS = "IP Address"
+LBL_MODEL = "Model"
+LBL_ALT_SERIAL = "Alternate Serial"
+LBL_ACTIVE = "Active"
+LBL_PANORAMA = "Panorama"
+LBL_LAST_REFRESH = "Last Refresh"
+LBL_IPV6_ADDRESS = "IPv6 Address"
+LBL_MAC_ADDRESS = "MAC Address"
+LBL_UPTIME = "Uptime"
+LBL_SW_VERSION = "Software Version"
+LBL_APP_VERSION = "App Version"
+LBL_AV_VERSION = "Antivirus Version"
+LBL_WILDFIRE_VERSION = "WildFire Version"
+LBL_THREAT_VERSION = "Threat Version"
+LBL_URL_FILTERING_VERSION = "URL Filtering Version"
+LBL_DEVICE_CERT_PRESENT = "Device Certificate"
+LBL_DEVICE_CERT_EXPIRY = "Device Cert Expiry"
+LBL_ALT_IP = "Alternate IP"
+LBL_ARE = "Advanced Routing"
+LBL_PAN_HOSTNAME = "Hostname"  # Can reuse if generic, or make specific
+LBL_PAN_SERIAL = "Serial Number"
+LBL_PAN_IP_ADDRESS = "IP Address"
+LBL_PAN_ALT_IP = "Alternate IP"
+LBL_PAN_ACTIVE = "Active"
+LBL_PAN_NGFW_COUNT = "MT Managed NGFWs"
+LBL_PAN_MAC_ADDRESS = "MAC Address"
+LBL_PAN_UPTIME = "Uptime"
+LBL_PAN_MODEL = "Model"
+LBL_PAN_SW_VERSION = "Software Version"
+LBL_PAN_APP_VERSION = "App Version"
+LBL_PAN_AV_VERSION = "Antivirus Version"
+LBL_PAN_WILDFIRE_VERSION = "WildFire Version"
+LBL_PAN_LOGDB_VERSION = "Log DB Version"
+LBL_PAN_SYSTEM_MODE = "System Mode"
+LBL_PAN_LIC_DEV_CAP = "Device Capacity"
+LBL_PAN_DEV_CERT_STATUS = "Device Cert Status"
+LBL_PAN_IPV6_ADDRESS = "IPv6 Address"
+LBL_PAN_LAST_SYS_REFRESH = "System Info Refresh"
+
+# Keys for display
 KEY_NGFW = "ngfw"
 KEY_VR = "virtual_router"
 KEY_DEST = "destination"
@@ -126,10 +173,43 @@ KEY_ALT_SERIAL = "alt_serial"
 KEY_ACTIVE = "active"
 KEY_PANORAMA = "panorama"
 KEY_LAST_UPDATE = "last_update"
+KEY_ARE = "advanced_routing_enabled"
 KEY_ALT_IP = "alt_ip"
 KEY_NGFW_COUNT = "ngfws"
 KEY_IPV6_PRESENT = "ipv6_present"
 KEY_IPV6_ADDRESS_LIST = 'ipv6_address_list'
+# Keys specific to the detail view, MUST match _format_ngfw_result
+KEY_IPV6_ADDRESS_DETAIL = "ipv6_address"
+KEY_MAC_ADDRESS_DETAIL = "mac_address"
+KEY_UPTIME_DETAIL = "uptime"
+KEY_SW_VERSION_DETAIL = "sw_version"
+KEY_APP_VERSION_DETAIL = "app_version"
+KEY_AV_VERSION_DETAIL = "av_version"
+KEY_WILDFIRE_VERSION_DETAIL = "wildfire_version"
+KEY_THREAT_VERSION_DETAIL = "threat_version"
+KEY_URL_FILTERING_VERSION_DETAIL = "url_filtering_version"
+KEY_DEVICE_CERT_PRESENT_DETAIL = "device_cert_present"
+KEY_DEVICE_CERT_EXPIRY_DETAIL = "device_cert_expiry_date"
+# New Keys Panorama
+KEY_PAN_HOSTNAME = "hostname" # Standard key
+KEY_PAN_SERIAL = "serial_number" # Standard key
+KEY_PAN_IP_ADDRESS = "ip_address" # Standard key
+KEY_PAN_ALT_IP = "alt_ip" # Standard key
+KEY_PAN_ACTIVE = "active" # Standard key
+KEY_PAN_NGFW_COUNT = "ngfws" # Standard key
+KEY_PAN_MAC_ADDRESS = "mac_address"
+KEY_PAN_UPTIME = "uptime"
+KEY_PAN_MODEL = "model"
+KEY_PAN_SW_VERSION = "sw_version"
+KEY_PAN_APP_VERSION = "app_version"
+KEY_PAN_AV_VERSION = "av_version"
+KEY_PAN_WILDFIRE_VERSION = "wildfire_version"
+KEY_PAN_LOGDB_VERSION = "logdb_version"
+KEY_PAN_SYSTEM_MODE = "system_mode"
+KEY_PAN_LIC_DEV_CAP = "licensed_device_capacity"
+KEY_PAN_DEV_CERT_STATUS = "device_certificate_status"
+KEY_PAN_IPV6_ADDRESS = "ipv6_address"
+KEY_PAN_LAST_SYS_REFRESH = "last_system_info_refresh"
 
 
 # ==============================================================================
@@ -297,6 +377,142 @@ def _print_interfaces_v6(results, message):
         print("\n".join(message))
 
     print() # Final newline for spacing
+
+def _print_ngfw_detail_results(results=None, message=None):
+    """
+    Formats and prints detailed NGFW information in a per-device attribute-value list.
+
+    Args:
+        results (list[dict], optional): List of dictionaries, where each dictionary is
+                                         an NGFW's data from controller._format_ngfw_result.
+        message (list[str], optional): List of strings to print after all devices.
+    """
+    if not results:
+        if message:
+            print()
+            print("\n".join(message))
+        else:
+            print("No NGFWs found to display details for.")
+        print()
+        return
+
+    # Define the order and labels for attributes
+    # Keys must match those returned by controller._format_ngfw_result()
+    attributes_to_print = [
+        (LBL_SERIAL, KEY_SERIAL),
+        (LBL_IP_ADDRESS, KEY_IP_ADDRESS),
+        (LBL_IPV6_ADDRESS, KEY_IPV6_ADDRESS_DETAIL),
+        (LBL_MAC_ADDRESS, KEY_MAC),
+        (LBL_MODEL, KEY_MODEL),
+        (LBL_SW_VERSION, KEY_SW_VERSION_DETAIL),
+        (LBL_UPTIME, KEY_UPTIME_DETAIL),
+        (LBL_PANORAMA, KEY_PANORAMA),
+        (LBL_ACTIVE, KEY_ACTIVE),
+        (LBL_ALT_SERIAL, KEY_ALT_SERIAL),
+        (LBL_ALT_IP, KEY_ALT_IP),
+        (LBL_ARE, KEY_ARE),
+        # Version information
+        (LBL_APP_VERSION, KEY_APP_VERSION_DETAIL),
+        (LBL_THREAT_VERSION, KEY_THREAT_VERSION_DETAIL),
+        (LBL_AV_VERSION, KEY_AV_VERSION_DETAIL),
+        (LBL_WILDFIRE_VERSION, KEY_WILDFIRE_VERSION_DETAIL),
+        (LBL_URL_FILTERING_VERSION, KEY_URL_FILTERING_VERSION_DETAIL),
+        # Certificate information
+        (LBL_DEVICE_CERT_PRESENT, KEY_DEVICE_CERT_PRESENT_DETAIL),
+        (LBL_DEVICE_CERT_EXPIRY, KEY_DEVICE_CERT_EXPIRY_DETAIL),
+        # Management info
+        (LBL_LAST_REFRESH, KEY_LAST_UPDATE),
+    ]
+
+    first_ngfw = True
+    for ngfw_data in results:
+        if not first_ngfw:
+            print() # Add a newline between NGFW entries
+        first_ngfw = False
+
+        hostname = ngfw_data.get(KEY_HOSTNAME, "Unknown Hostname")
+        serial = ngfw_data.get(KEY_SERIAL, "N/A")
+        print(f"---- {hostname} ({serial}) ----")
+
+        # Calculate the maximum label length for alignment for this specific NGFW's display
+        # (or could do it once for all attributes_to_print if labels are fixed)
+        max_label_len = 0
+        for label, _ in attributes_to_print:
+            if len(label) > max_label_len:
+                max_label_len = len(label)
+        
+        for label, key in attributes_to_print:
+            value = ngfw_data.get(key, "N/A") # Default to "N/A" if key somehow missing
+            if value == '': # Make empty strings more readable
+                value = "-" 
+            print(f"{label:<{max_label_len}} : {value}")
+
+    if message:
+        print()
+        print("\n".join(message))
+    print() # Final newline
+
+def _print_panorama_detail_results(results=None, message=None):
+    """
+    Formats and prints detailed Panorama information.
+    """
+    if not results:
+        if message:
+            print("\n".join(message))
+        else:
+            print("No Panoramas found to display details for.")
+        print()
+        return
+
+    attributes_to_print = [
+        (LBL_PAN_SERIAL, KEY_PAN_SERIAL),
+        (LBL_PAN_IP_ADDRESS, KEY_PAN_IP_ADDRESS),
+        (LBL_PAN_IPV6_ADDRESS, KEY_PAN_IPV6_ADDRESS),
+        (LBL_PAN_MAC_ADDRESS, KEY_PAN_MAC_ADDRESS),
+        (LBL_PAN_MODEL, KEY_PAN_MODEL),
+        (LBL_PAN_SYSTEM_MODE, KEY_PAN_SYSTEM_MODE),
+        (LBL_PAN_SW_VERSION, KEY_PAN_SW_VERSION),
+        (LBL_PAN_UPTIME, KEY_PAN_UPTIME),
+        (LBL_PAN_ACTIVE, KEY_PAN_ACTIVE),
+        (LBL_PAN_ALT_IP, KEY_PAN_ALT_IP),
+        (LBL_PAN_NGFW_COUNT, KEY_PAN_NGFW_COUNT),
+        (LBL_PAN_LIC_DEV_CAP, KEY_PAN_LIC_DEV_CAP),
+        # Version information
+        (LBL_PAN_APP_VERSION, KEY_PAN_APP_VERSION),
+        (LBL_PAN_AV_VERSION, KEY_PAN_AV_VERSION),
+        (LBL_PAN_WILDFIRE_VERSION, KEY_PAN_WILDFIRE_VERSION),
+        (LBL_PAN_LOGDB_VERSION, KEY_PAN_LOGDB_VERSION),
+        # Certificate information
+        (LBL_PAN_DEV_CERT_STATUS, KEY_PAN_DEV_CERT_STATUS),
+        # Management info
+        (LBL_PAN_LAST_SYS_REFRESH, KEY_PAN_LAST_SYS_REFRESH),
+    ]
+
+    first_pan = True
+    for pan_data in results:
+        if not first_pan:
+            print() 
+        first_pan = False
+
+        hostname = pan_data.get(KEY_PAN_HOSTNAME, "Unknown Panorama")
+        serial = pan_data.get(KEY_PAN_SERIAL, "N/A")
+        print(f"---- {hostname} ({serial}) ----")
+
+        max_label_len = 0
+        for label, _ in attributes_to_print:
+            if len(label) > max_label_len:
+                max_label_len = len(label)
+        
+        for label, key in attributes_to_print:
+            value = pan_data.get(key, "N/A") 
+            if value == '' or value is None: # Handle None explicitly as well
+                value = "-" 
+            print(f"{label:<{max_label_len}} : {value}")
+
+    if message:
+        print()
+        print("\n".join(message))
+    print()
 
 def _confirm_on_demand_scope(ngfw_query, controller, multiplier=1, yes=False):
     """
@@ -619,6 +835,7 @@ def handle_show(args, controller):
     on_demand = args.on_demand
     ngfw_filter = args.ngfw
     vr_filter = args.vr
+    show_detail = args.detail if hasattr(args, 'detail') else False 
     afi_filter = args.afi if hasattr(args, 'afi') else 'ipv4'
 
     # --- On-Demand Confirmation (Applies generally) ---
@@ -629,11 +846,9 @@ def handle_show(args, controller):
 
     # --- Filter Context (Applies generally) ---
     filter_info = []
-    # ... (existing filter context logic) ...
     if filter_info: print(f"  Filters: {', '.join(filter_info)}")
 
 
-    # --- Define headers and call the appropriate controller method ---
     response = {'results': None, 'message': None}
     headers = {} # Standard headers for _print_results
     legend = None
@@ -652,7 +867,6 @@ def handle_show(args, controller):
             Oi:ospf intra-area, Oo:ospf inter-area, O1:ospf ext-type-1, O2:ospf ext-type-2, E:ecmp, M:multicast"""
 
         elif option == CMD_FIBS:
-            # <<< Pass args.afi to controller method >>>
             response = controller.get_fibs(
                 ngfw=ngfw_filter, virtual_router=vr_filter, destination=args.dst,
                 flags=args.flag, on_demand=on_demand, afi=afi_filter # Pass AFI value
@@ -708,11 +922,20 @@ def handle_show(args, controller):
         elif option == CMD_NGFWS:
             pan_arg = args.pan if hasattr(args, 'pan') else None
             response = controller.get_ngfws(panorama=pan_arg)
-            headers = {HDR_HOSTNAME: KEY_HOSTNAME, HDR_SERIAL: KEY_SERIAL, HDR_IP: KEY_IP_ADDRESS, HDR_MODEL: KEY_MODEL, HDR_ALT_SERIAL: KEY_ALT_SERIAL, HDR_ACTIVE: KEY_ACTIVE, HDR_PANORAMA: KEY_PANORAMA, HDR_LAST_REFRESH: KEY_LAST_UPDATE}
+            headers = {HDR_HOSTNAME: KEY_HOSTNAME, HDR_SERIAL: KEY_SERIAL, HDR_IP: KEY_IP_ADDRESS, HDR_MODEL: KEY_MODEL, HDR_ALT_SERIAL: KEY_ALT_SERIAL, HDR_ACTIVE: KEY_ACTIVE, HDR_PANORAMA: KEY_PANORAMA, HDR_ARE: KEY_ARE, HDR_LAST_REFRESH: KEY_LAST_UPDATE}
+            # --- Handle --detail flag ---
+            if show_detail:
+                _print_ngfw_detail_results(results=response.get('results'), message=response.get('message'))
+                return # Exit handler, do not proceed to generic _print_results
 
-        elif option == CMD_PAN:
+        elif option == CMD_PAN: 
             response = controller.get_panoramas()
             headers = {HDR_HOSTNAME: KEY_HOSTNAME, HDR_SERIAL: KEY_SERIAL, HDR_IP: KEY_IP_ADDRESS, HDR_ALT_IP: KEY_ALT_IP, HDR_ACTIVE: KEY_ACTIVE, HDR_NGFW_COUNT: KEY_NGFW_COUNT}
+
+            # --- Handle --detail flag ---
+            if show_detail:
+                _print_panorama_detail_results(results=response.get('results'), message=response.get('message'))
+                return
 
         # --- Print Legend and Results (for standard commands) ---
         # This part is skipped if option == CMD_INTERFACESV6 due to the 'return' above
@@ -1040,10 +1263,15 @@ def main():
             parser_show.add_argument("--afi", "-a", type=str, choices=["ipv4", "ipv6"], default="ipv4",help="Address family for routes and fibs (default: ipv4)")
             parser_show.add_argument("--on-demand", action="store_true", help="Fetch data directly from device(s) via API instead of DB")
             parser_show.add_argument("--yes", "-y", action="store_true", help="Bypass confirmation prompt for on-demand queries on multiple NGFWs")
+            
             # Associate handler, passing the controller instance
-            parser_show.set_defaults(func=lambda args: handle_show(args, controller))
-        # No 'else' needed; if DB is ready but empty, 'show' command is simply not added
+            parser_show.add_argument(
+                "--detail",
+                action="store_true", # Sets args.detail to True if flag is present
+                help="Show detailed information (currently applies to 'show ngfws')"
+            )
 
+            parser_show.set_defaults(func=lambda args: handle_show(args, controller))
 
     # --- Parse Arguments ---
     # This is placed after command definitions so --help works correctly,
@@ -1085,9 +1313,6 @@ def main():
          exit_code = 1
     except Exception as e: # Catch any other unexpected errors during command execution
         print(f"\nAn unexpected error occurred: {e}", file=sys.stderr)
-        # Optional: Add traceback for debugging non-handled errors during development
-        # import traceback
-        # traceback.print_exc()
         exit_code = 1
 
     # Exit the script with the determined exit code
