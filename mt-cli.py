@@ -4,6 +4,7 @@ from getpass import getpass
 import os
 import sys
 import logging
+import csv
 import sqlalchemy.exc
 
 # Configuration and backend imports
@@ -514,6 +515,139 @@ def _print_panorama_detail_results(results=None, message=None):
         print("\n".join(message))
     print()
 
+def _write_results_to_csv(filename, headers_dict, results):
+    """
+    Writes standard tabular results to a CSV file.
+
+    Args:
+        filename (str): The name of the CSV file to write.
+        headers_dict (dict): Dictionary mapping display header names (str) to data keys (str).
+                             Example: {"NGFW": "ngfw", "Virtual Router": "virtual_router"}
+        results (list[dict]): List of dictionaries, where each dictionary is a row.
+
+    Returns:
+        tuple: (bool, str) indicating success and a message.
+    """
+    try:
+        # Extract display names for the header row from the dictionary keys
+        header_display_names = list(headers_dict.keys())
+        # Extract data keys from the dictionary values to access data from results
+        data_keys = list(headers_dict.values())
+
+        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(header_display_names)  # Write the display header row
+
+            if results:
+                for row_data in results:
+                    # Ensure all keys are present, providing 'N/A' if a key is missing
+                    writer.writerow([row_data.get(key, 'N/A') for key in data_keys])
+            else: # Handle case where results might be an empty list but headers are present
+                pass # Just write the header if no data rows
+
+        return True, f"Successfully wrote data to {filename}"
+    except IOError as e:
+        logging.error(f"IOError writing to CSV file {filename}: {e}")
+        return False, f"Error writing to CSV file {filename}: {e}"
+    except Exception as e:
+        logging.error(f"Unexpected error during CSV writing for {filename}: {e}")
+        return False, f"An unexpected error occurred while writing to {filename}: {e}"
+
+def _write_detail_to_csv_generic(filename, attributes_list, results_list):
+    """
+    Writes detailed results (attribute-value pairs per item) to a CSV file.
+    Each item in results_list becomes a row. Columns are derived from attributes_list.
+
+    Args:
+        filename (str): The name of the CSV file to write.
+        attributes_list (list): A list of (label, key) tuples.
+                                Labels are used as CSV headers.
+                                Keys are used to extract data from results_list items.
+        results_list (list[dict]): A list of dictionaries, where each dictionary is an item (e.g., an NGFW or Panorama).
+
+    Returns:
+        tuple: (bool, str) indicating success and a message.
+    """
+    try:
+        if not attributes_list:
+            return False, f"No attributes defined for detailed CSV export to {filename}."
+
+        # Use labels from attributes_list as CSV headers
+        header_labels = [label for label, key in attributes_list]
+        # Use keys from attributes_list to extract data
+        data_keys = [key for label, key in attributes_list]
+
+        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(header_labels)  # Write the header row
+
+            if results_list:
+                for item_data in results_list:
+                    # Construct row by fetching data using keys, default to "N/A" if key missing
+                    row_to_write = [item_data.get(key, "N/A") for key in data_keys]
+                    writer.writerow(row_to_write)
+            else: # Handle case where results might be an empty list but attributes are present
+                pass # Just write the header if no data rows
+
+
+        return True, f"Successfully wrote detailed data to {filename}"
+    except IOError as e:
+        logging.error(f"IOError writing detailed data to CSV file {filename}: {e}")
+        return False, f"Error writing detailed data to CSV file {filename}: {e}"
+    except Exception as e:
+        logging.error(f"Unexpected error during detailed CSV writing for {filename}: {e}")
+        return False, f"An unexpected error occurred while writing detailed data to {filename}: {e}"
+
+def _write_interfaces_v6_to_csv(filename, results):
+    """
+    Writes IPv6 interface data to a CSV file.
+    Each IPv6 address for an interface gets its own row in the CSV.
+
+    Args:
+        filename (str): The name of the CSV file to write.
+        results (list[dict]): List of dictionaries, each representing an interface
+                              and containing 'ipv6_address_list'. Expected keys in each dict
+                              are based on constants like KEY_NGFW, KEY_VR, KEY_NAME, etc.
+
+    Returns:
+        tuple: (bool, str) indicating success and a message.
+    """
+    try:
+        # Define CSV headers explicitly for this custom format
+        # These correspond to the headers used in the terminal print for _print_interfaces_v6
+        csv_headers = [HDR_NGFW, HDR_VR, HDR_NAME, HDR_TAG, HDR_ZONE, HDR_IPV6_ADDRESSES] # Using HDR_IPV6_ADDRESSES as the column for the address itself
+
+        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+            writer = csv.writer(csvfile)
+            writer.writerow(csv_headers)
+
+            if results:
+                for r_data in results: # Each r_data is a dictionary for an interface
+                    ngfw = r_data.get(KEY_NGFW, 'N/A')
+                    vr = r_data.get(KEY_VR, 'N/A')
+                    name = r_data.get(KEY_NAME, 'N/A')
+                    tag = str(r_data.get(KEY_TAG, 'N/A')) # Ensure tag is a string
+                    zone = r_data.get(KEY_ZONE, 'N/A')
+                    ipv6_list = r_data.get(KEY_IPV6_ADDRESS_LIST, []) # This key is set by _format_interface_result
+
+                    if ipv6_list: # If there are IPv6 addresses for this interface
+                        for ipv6_addr in ipv6_list:
+                            writer.writerow([ngfw, vr, name, tag, zone, ipv6_addr])
+                    else:
+                        # If an interface is included in results but has no IPv6 addresses,
+                        # write a row indicating this.
+                        writer.writerow([ngfw, vr, name, tag, zone, "(No IPv6 Addresses Found)"])
+            else: # Handle case where results might be an empty list
+                pass # Just write the header if no data rows
+
+        return True, f"Successfully wrote IPv6 interface data to {filename}"
+    except IOError as e:
+        logging.error(f"IOError writing IPv6 interface data to CSV file {filename}: {e}")
+        return False, f"Error writing IPv6 interface data to CSV file {filename}: {e}"
+    except Exception as e:
+        logging.error(f"Unexpected error during IPv6 interface CSV writing for {filename}: {e}")
+        return False, f"An unexpected error occurred while writing IPv6 interface data to {filename}: {e}"
+
 def _confirm_on_demand_scope(ngfw_query, controller, multiplier=1, yes=False):
     """
     Checks if an on-demand operation targets multiple NGFWs and prompts for confirmation.
@@ -827,38 +961,75 @@ def handle_update(args, controller):
 
 def handle_show(args, controller):
     """
-    Handles the 'show' command. Displays various information from the database or via on-demand API calls.
-    Includes custom handling for 'interfacesv6'.
+    Handles the 'show' command. Displays various information from the database
+    or via on-demand API calls. Includes logic for CSV output.
     """
-    # Option validated by choices
+    # Command options and filters from arguments
     option = args.option
     on_demand = args.on_demand
     ngfw_filter = args.ngfw
     vr_filter = args.vr
-    show_detail = args.detail if hasattr(args, 'detail') else False 
+    show_detail = args.detail if hasattr(args, 'detail') else False
     afi_filter = args.afi if hasattr(args, 'afi') else 'ipv4'
 
-    # --- On-Demand Confirmation (Applies generally) ---
-    if on_demand and option != CMD_INTERFACESV6: # Defer confirmation for interfacesv6 if needed
-        # ... (existing confirmation logic using _confirm_on_demand_scope) ...
-        # (Keep this as is for other commands)
-        print(f"Fetching '{option}' data on-demand...")
+    # --- START CSV Argument Handling ---
+    csv_output_file = None
+    if args.csv:  # Check if --csv flag is used or a filename is provided
+        if isinstance(args.csv, str):  # Filename provided
+            csv_output_file = args.csv
+        else:  # --csv flag used without a filename (args.csv is True)
+            # Default filename based on the command option, replacing hyphens with underscores
+            csv_output_file = f"{option.replace('-', '_')}.csv"
+    # --- END CSV Argument Handling ---
 
-    # --- Filter Context (Applies generally) ---
+    # --- On-Demand Confirmation ---
+    # This logic remains largely the same, confirming before data fetch attempt.
+    # Note: For CMD_INTERFACESV6, specific on-demand confirmation is handled further down.
+    if on_demand and option != CMD_INTERFACESV6:
+        # Multiplier for API call estimation (can be adjusted per command if needed)
+        api_multiplier = 1 
+        if option in [CMD_ROUTES, CMD_FIBS]: # Example if some commands are heavier
+            api_multiplier = 2
+        
+        if not _confirm_on_demand_scope(ngfw_query=ngfw_filter, controller=controller, multiplier=api_multiplier, yes=args.yes):
+            return # Exit if user cancelled or scope check failed
+        else:
+             # This print statement will appear for on-demand even if outputting to CSV, which is acceptable.
+             print(f"Fetching '{option}' data on-demand...")
+
+
+    # --- Filter Context ---
     filter_info = []
+    if ngfw_filter: filter_info.append(f"NGFW: {ngfw_filter}")
+    if vr_filter: filter_info.append(f"VR: {vr_filter}")
+    if hasattr(args, 'dst') and args.dst: filter_info.append(f"Destination: {args.dst}")
+    if hasattr(args, 'flag') and args.flag: filter_info.append(f"Flags: {args.flag}")
+    if hasattr(args, 'int') and args.int: filter_info.append(f"Interface: {args.int}")
+    if hasattr(args, 'pan') and args.pan: filter_info.append(f"Panorama: {args.pan}")
+    if hasattr(args, 'afi') and args.afi != 'ipv4': filter_info.append(f"AFI: {args.afi}")
+    # This print statement will appear even if outputting to CSV.
     if filter_info: print(f"  Filters: {', '.join(filter_info)}")
 
 
+    # Initialize variables for data, headers, and legend
     response = {'results': None, 'message': None}
-    headers = {} # Standard headers for _print_results
-    legend = None
+    headers = {}  # For standard tabular data (used by _print_results and CSV writer)
+    legend = None # For terminal output legend
+
+    # For CSV output of detailed views
+    attributes_for_ngfw_detail_csv = []
+    attributes_for_pan_detail_csv = []
 
     try:
-        # Standard processing for most commands using _print_results
+        # --- Data Fetching and Header/Attribute Preparation ---
+        # This section populates 'response', 'headers', 'legend',
+        # and 'attributes_for_..._detail_csv' based on the 'option'.
+        # NO early returns here for specific print functions.
+
         if option == CMD_ROUTES:
             response = controller.get_routes(
                 ngfw=ngfw_filter, virtual_router=vr_filter, destination=args.dst,
-                flags=args.flag, on_demand=on_demand, afi=afi_filter # Pass AFI value
+                flags=args.flag, on_demand=on_demand, afi=afi_filter
             )
             headers = {HDR_NGFW: KEY_NGFW, HDR_VR: KEY_VR, HDR_DEST: KEY_DEST,
                        HDR_NEXTHOP: KEY_NEXTHOP, HDR_METRIC: KEY_METRIC, HDR_FLAGS: KEY_FLAGS,
@@ -869,7 +1040,7 @@ def handle_show(args, controller):
         elif option == CMD_FIBS:
             response = controller.get_fibs(
                 ngfw=ngfw_filter, virtual_router=vr_filter, destination=args.dst,
-                flags=args.flag, on_demand=on_demand, afi=afi_filter # Pass AFI value
+                flags=args.flag, on_demand=on_demand, afi=afi_filter
             )
             headers = {HDR_NGFW: KEY_NGFW, HDR_VR: KEY_VR, HDR_DEST: KEY_DEST,
                        HDR_NEXTHOP: KEY_NEXTHOP, HDR_NH_TYPE: KEY_NH_TYPE, HDR_FLAGS: KEY_FLAGS,
@@ -880,33 +1051,28 @@ def handle_show(args, controller):
             response = controller.get_bgp_peers(ngfw=ngfw_filter, virtual_router=vr_filter, on_demand=on_demand)
             headers = {HDR_NGFW: KEY_NGFW, HDR_VR: KEY_VR, HDR_PEER_NAME: KEY_PEER_NAME, HDR_PEER_GROUP: KEY_PEER_GROUP, HDR_PEER_ROUTER_ID: KEY_PEER_ROUTER_ID, HDR_REMOTE_AS: KEY_REMOTE_AS, HDR_STATUS: KEY_STATUS, HDR_DURATION: KEY_DURATION, HDR_PEER_ADDRESS: KEY_PEER_ADDRESS, HDR_LOCAL_ADDRESS: KEY_LOCAL_ADDRESS}
 
-        elif option == CMD_INTERFACES: # Standard interfaces command
+        elif option == CMD_INTERFACES:  # Standard interfaces command
             response = controller.get_interfaces(ngfw=ngfw_filter, virtual_router=vr_filter, on_demand=on_demand, ipv6_enabled_only=False)
             headers = {HDR_NGFW: KEY_NGFW, HDR_VR: KEY_VR, HDR_NAME: KEY_NAME, HDR_TAG: KEY_TAG, HDR_ADDRESS: KEY_ADDRESS_IP, HDR_IPV6_PRESENT: KEY_IPV6_PRESENT, HDR_ZONE: KEY_ZONE}
 
         elif option == CMD_INTERFACESV6:
-
+            # Specific on-demand confirmation for interfacesv6
             if on_demand:
-                 if not _confirm_on_demand_scope(ngfw_query=ngfw_filter, controller=controller, multiplier=1, yes=args.yes):
-                      return # Exit if user cancelled
-                 else:
+                if not _confirm_on_demand_scope(ngfw_query=ngfw_filter, controller=controller, multiplier=1, yes=args.yes):
+                    return  # Exit if user cancelled
+                else:
+                    # This print happens before CSV/terminal decision, which is fine.
                     print(f"Fetching IPv6 interface data{' (on-demand)' if on_demand else ''}...")
 
-            # Call controller to get filtered data
             response = controller.get_interfaces(
                 ngfw=ngfw_filter,
                 virtual_router=vr_filter,
-                ipv6_enabled_only=True, # Filter flag
+                ipv6_enabled_only=True,  # Filter flag
                 on_demand=on_demand
             )
-            results = response.get('results')
-            message = response.get('message')
+            # Note: `headers` is not set here because `_print_interfaces_v6` is custom.
+            # The CSV writer for this option will define its own headers.
 
-            # Call the dedicated print helper
-            _print_interfaces_v6(results, message)
-
-            return # Exit handler, do not proceed to generic _print_results
-        
         elif option == CMD_LLDP:
             response = controller.get_neighbors(ngfw=ngfw_filter, on_demand=on_demand)
             headers = {HDR_NGFW: KEY_NGFW, HDR_LOCAL_IF: KEY_LOCAL_IF, HDR_REMOTE_IF_ID: KEY_REMOTE_IF_ID, HDR_REMOTE_IF_DESC: KEY_REMOTE_IF_DESC, HDR_REMOTE_HOSTNAME: KEY_REMOTE_HOSTNAME}
@@ -922,32 +1088,97 @@ def handle_show(args, controller):
         elif option == CMD_NGFWS:
             pan_arg = args.pan if hasattr(args, 'pan') else None
             response = controller.get_ngfws(panorama=pan_arg)
-            headers = {HDR_HOSTNAME: KEY_HOSTNAME, HDR_SERIAL: KEY_SERIAL, HDR_IP: KEY_IP_ADDRESS, HDR_MODEL: KEY_MODEL, HDR_ALT_SERIAL: KEY_ALT_SERIAL, HDR_ACTIVE: KEY_ACTIVE, HDR_PANORAMA: KEY_PANORAMA, HDR_ARE: KEY_ARE, HDR_LAST_REFRESH: KEY_LAST_UPDATE}
-            # --- Handle --detail flag ---
             if show_detail:
-                _print_ngfw_detail_results(results=response.get('results'), message=response.get('message'))
-                return # Exit handler, do not proceed to generic _print_results
+                # This list defines the columns for the detailed CSV output for NGFWs
+                attributes_for_ngfw_detail_csv = [
+                    (LBL_HOSTNAME, KEY_HOSTNAME), (LBL_SERIAL, KEY_SERIAL),
+                    (LBL_IP_ADDRESS, KEY_IP_ADDRESS), (LBL_IPV6_ADDRESS, KEY_IPV6_ADDRESS_DETAIL),
+                    (LBL_MAC_ADDRESS, KEY_MAC), (LBL_MODEL, KEY_MODEL),
+                    (LBL_SW_VERSION, KEY_SW_VERSION_DETAIL), (LBL_UPTIME, KEY_UPTIME_DETAIL),
+                    (LBL_PANORAMA, KEY_PANORAMA), (LBL_ACTIVE, KEY_ACTIVE),
+                    (LBL_ALT_SERIAL, KEY_ALT_SERIAL), (LBL_ALT_IP, KEY_ALT_IP), (LBL_ARE, KEY_ARE),
+                    (LBL_APP_VERSION, KEY_APP_VERSION_DETAIL), (LBL_THREAT_VERSION, KEY_THREAT_VERSION_DETAIL),
+                    (LBL_AV_VERSION, KEY_AV_VERSION_DETAIL), (LBL_WILDFIRE_VERSION, KEY_WILDFIRE_VERSION_DETAIL),
+                    (LBL_URL_FILTERING_VERSION, KEY_URL_FILTERING_VERSION_DETAIL),
+                    (LBL_DEVICE_CERT_PRESENT, KEY_DEVICE_CERT_PRESENT_DETAIL), (LBL_DEVICE_CERT_EXPIRY, KEY_DEVICE_CERT_EXPIRY_DETAIL),
+                    (LBL_LAST_REFRESH, KEY_LAST_UPDATE)
+                ]
+            else:  # Non-detail view
+                headers = {HDR_HOSTNAME: KEY_HOSTNAME, HDR_SERIAL: KEY_SERIAL, HDR_IP: KEY_IP_ADDRESS,
+                           HDR_MODEL: KEY_MODEL, HDR_ALT_SERIAL: KEY_ALT_SERIAL, HDR_ACTIVE: KEY_ACTIVE,
+                           HDR_PANORAMA: KEY_PANORAMA, HDR_ARE: KEY_ARE, HDR_LAST_REFRESH: KEY_LAST_UPDATE}
 
-        elif option == CMD_PAN: 
+        elif option == CMD_PAN:
             response = controller.get_panoramas()
-            headers = {HDR_HOSTNAME: KEY_HOSTNAME, HDR_SERIAL: KEY_SERIAL, HDR_IP: KEY_IP_ADDRESS, HDR_ALT_IP: KEY_ALT_IP, HDR_ACTIVE: KEY_ACTIVE, HDR_NGFW_COUNT: KEY_NGFW_COUNT}
-
-            # --- Handle --detail flag ---
             if show_detail:
-                _print_panorama_detail_results(results=response.get('results'), message=response.get('message'))
-                return
-
-        # --- Print Legend and Results (for standard commands) ---
-        # This part is skipped if option == CMD_INTERFACESV6 due to the 'return' above
-        if legend and response.get('results'):
-             print(f"\n{legend}\n")
-
-        # Generic print function for standard table outputs
-        _print_results(headers, response.get('results'), response.get('message'))
+                # This list defines the columns for the detailed CSV output for Panoramas
+                attributes_for_pan_detail_csv = [
+                    (LBL_PAN_HOSTNAME, KEY_PAN_HOSTNAME), (LBL_PAN_SERIAL, KEY_PAN_SERIAL),
+                    (LBL_PAN_IP_ADDRESS, KEY_PAN_IP_ADDRESS), (LBL_PAN_IPV6_ADDRESS, KEY_PAN_IPV6_ADDRESS),
+                    (LBL_PAN_MAC_ADDRESS, KEY_PAN_MAC_ADDRESS), (LBL_PAN_MODEL, KEY_PAN_MODEL),
+                    (LBL_PAN_SYSTEM_MODE, KEY_PAN_SYSTEM_MODE), (LBL_PAN_SW_VERSION, KEY_PAN_SW_VERSION),
+                    (LBL_PAN_UPTIME, KEY_PAN_UPTIME), (LBL_PAN_ACTIVE, KEY_PAN_ACTIVE),
+                    (LBL_PAN_ALT_IP, KEY_PAN_ALT_IP), (LBL_PAN_NGFW_COUNT, KEY_PAN_NGFW_COUNT),
+                    (LBL_PAN_LIC_DEV_CAP, KEY_PAN_LIC_DEV_CAP), (LBL_PAN_APP_VERSION, KEY_PAN_APP_VERSION),
+                    (LBL_PAN_AV_VERSION, KEY_PAN_AV_VERSION), (LBL_PAN_WILDFIRE_VERSION, KEY_PAN_WILDFIRE_VERSION),
+                    (LBL_PAN_LOGDB_VERSION, KEY_PAN_LOGDB_VERSION), (LBL_PAN_DEV_CERT_STATUS, KEY_PAN_DEV_CERT_STATUS),
+                    (LBL_PAN_LAST_SYS_REFRESH, KEY_PAN_LAST_SYS_REFRESH)
+                ]
+            else:  # Non-detail view
+                headers = {HDR_HOSTNAME: KEY_HOSTNAME, HDR_SERIAL: KEY_SERIAL, HDR_IP: KEY_IP_ADDRESS,
+                           HDR_ALT_IP: KEY_ALT_IP, HDR_ACTIVE: KEY_ACTIVE, HDR_NGFW_COUNT: KEY_NGFW_COUNT}
 
     except MTControllerException as e:
-         # Let the main loop handle printing the error and setting exit code
-         raise e
+        # Let the main loop handle printing the error and setting exit code
+        # This ensures that if data fetching fails, we don't try to output.
+        raise e
+
+    # --- START Output Handling (CSV or Terminal) ---
+    if csv_output_file:
+        data_results = response.get('results')
+        # Initialize csv_generation_message; it will be updated by the CSV writers
+        csv_generation_message = "" 
+        success_writing_csv = False # Flag to track if CSV writing was attempted and its outcome
+
+        if not data_results:
+            if response.get('message'):
+                print(f"Info: {' '.join(response.get('message', [])).strip()}. CSV file '{csv_output_file}' not generated.")
+            else:
+                print(f"Info: No data found to write to CSV for '{option}'. File '{csv_output_file}' not generated.")
+            return # Exit handler, no CSV to write
+
+        # --- Call appropriate CSV writer based on 'option' and 'show_detail' ---
+        if option == CMD_INTERFACESV6:
+            success_writing_csv, csv_generation_message = _write_interfaces_v6_to_csv(csv_output_file, data_results)
+        elif show_detail and option == CMD_NGFWS and attributes_for_ngfw_detail_csv:
+            success_writing_csv, csv_generation_message = _write_detail_to_csv_generic(csv_output_file, attributes_for_ngfw_detail_csv, data_results)
+        elif show_detail and option == CMD_PAN and attributes_for_pan_detail_csv:
+            success_writing_csv, csv_generation_message = _write_detail_to_csv_generic(csv_output_file, attributes_for_pan_detail_csv, data_results)
+        elif headers:  # Standard tabular output, and 'headers' dictionary is populated
+            success_writing_csv, csv_generation_message = _write_results_to_csv(csv_output_file, headers, data_results)
+        else:
+            # Fallback if no specific CSV handling logic matches
+            csv_generation_message = f"Error: CSV output scenario for '{option}' (detail={show_detail}) is not properly configured. File '{csv_output_file}' not generated."
+            success_writing_csv = False # Explicitly set success to False
+
+        print(csv_generation_message) # Print the CSV generation status to the terminal
+
+    else:
+        # --- Terminal Output Path (original logic) ---
+        # This block is executed if --csv was NOT specified.
+        if option == CMD_INTERFACESV6:
+            _print_interfaces_v6(response.get('results'), response.get('message'))
+        elif show_detail and option == CMD_NGFWS:
+            _print_ngfw_detail_results(results=response.get('results'), message=response.get('message'))
+        elif show_detail and option == CMD_PAN:
+            _print_panorama_detail_results(results=response.get('results'), message=response.get('message'))
+        else:
+            if legend and response.get('results'):
+                print(f"\n{legend}\n")
+            if not headers and response.get('results'):
+                 print(f"Warning: Output headers missing for command '{option}'. Raw data might be incomplete or unformatted.")
+            _print_results(headers, response.get('results'), response.get('message'))
+    # --- END Output Handling ---
 
 def handle_fib_lookup(args, controller):
     """
@@ -1269,6 +1500,15 @@ def main():
                 "--detail",
                 action="store_true", # Sets args.detail to True if flag is present
                 help="Show detailed information (currently applies to 'show ngfws')"
+            )
+
+            # Add CSV output option
+            parser_show.add_argument(
+                "--csv",
+                nargs='?', # Allows the argument to be present without a value or with one value
+                const=True, # If --csv is present without a value, args.csv will be True
+                metavar="FILENAME.CSV", # Example for help message
+                help="Output the results to a CSV file. Optionally specify a filename. Defaults to <command_option>.csv."
             )
 
             parser_show.set_defaults(func=lambda args: handle_show(args, controller))

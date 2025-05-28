@@ -23,6 +23,12 @@ PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information f
 - Existing commands adapt to the ARE such as `show routes`, `show fibs`, and `show bgp-peers` commands.
 - Full testing of ARE support is not complete, please report any issues.
 
+**CSV Export for show commands**
+- Added `--csv` option to `show routes`, `show fibs`, `show interfaces` etc commands to export the results to a CSV file.
+- The CSV file will be created in the same directory as the script with a name based on the command.
+- Example: `show routes --csv` will create a file named `routes.csv`. 
+- A different file name can be specified with the `--csv <filename>` option.
+
 **General Code Cleanup**
 - Extensive code cleanup and refactoring via Gemini.
 
