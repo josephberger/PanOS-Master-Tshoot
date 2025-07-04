@@ -1216,7 +1216,7 @@ class MTController:
                      age=age, interface=data.get('interface',''),
                      route_table=data.get('route_table',''), zone=data.get('zone',''))
 
-    def _create_fib_object(self, vr_id, afi, data):
+    def _create_fib_object(self, vr_id, afi, data, interface_id=None):
         """ Creates a Fib object from a dictionary, handling type conversions and AFI.
             Adapts to standard XML output and ARE XML output formats processed by mt_devices.py.
         """
@@ -1238,7 +1238,7 @@ class MTController:
         return Fib(virtual_router_id=vr_id, afi=afi, fib_id=fib_id,
                    destination=data.get('destination',''), interface=data.get('interface',''),
                    nh_type=nh_type, flags=flags,
-                   nexthop=data.get('nexthop',''), mtu=mtu, zone=data.get('zone',''))
+                   nexthop=data.get('nexthop',''), mtu=mtu, zone=data.get('zone',''), interface_id=interface_id)
 
     def _create_arp_object(self, interface_id, zone, data):
          """ Creates an Arp object from a dictionary, handling type conversions. """
@@ -1729,6 +1729,13 @@ class MTController:
                             messages.append(f"  No VRs matching '{virtual_router or 'Any'}' found on this NGFW. Skipping.")
                             continue # Skip to the next NGFW
 
+                        # Pre-fetch interfaces for the target VRs to create a lookup map for interface IDs
+                        interface_map = {}
+                        if target_vr_ids:
+                            interfaces_for_ngfw = session.query(Interface).filter(Interface.virtual_router_id.in_(target_vr_ids)).all()
+                            # map key: (vr_id, interface_name), value: interface_id
+                            interface_map = {(iface.virtual_router_id, iface.name): iface.id for iface in interfaces_for_ngfw}
+
                         # 4. Delete Existing Route/FIB Data for Target VRs
                         commit_needed = False # Flag to track if actual DB changes occur
                         try:
@@ -1769,8 +1776,13 @@ class MTController:
                                     vr_name = f_data.get('virtual_router')
                                     if afi and vr_name in vr_map: # Check AFI and VR filter
                                         vr_id = vr_map[vr_name]
+
+                                        # Look up the interface_id from the map
+                                        interface_name = f_data.get('interface')
+                                        interface_id = interface_map.get((vr_id, interface_name)) # Will be None if not found
+
                                         # Create DB object using enriched data
-                                        db_fibs_to_add.append(self._create_fib_object(vr_id, afi, f_data))
+                                        db_fibs_to_add.append(self._create_fib_object(vr_id, afi, f_data, interface_id))
                                     elif not afi:
                                          messages.append(f"  Skipping FIB entry with unidentifiable AFI: {dest}")
 

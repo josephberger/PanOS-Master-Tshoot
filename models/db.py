@@ -191,13 +191,11 @@ class Fib(Base):
     # Establish the many-to-one relationship with VirtualRouter
     virtual_router = relationship('VirtualRouter', back_populates='fib')
 
+    # ForeignKey to associate with Interface
+    interface_id = Column(Integer, ForeignKey('interfaces.id'), nullable=True)
+
     # Establish the many-to-one relationship with Interface
-    # interface_id = Column(Integer, ForeignKey('interfaces.id'), nullable=True) # New FK column
-    # resolved_interface = relationship(
-    #     "Interface", 
-    #     foreign_keys=[interface_id], 
-    #     back_populates="fib_entries" # Connects to the relationship defined in Interface
-    # )
+    resolved_interface = relationship('Interface', back_populates='fib_entries')
 
     # Optional: Add indexes if needed
     # __table_args__ = (Index('idx_fib_lookup', 'virtual_router_id', 'afi', 'destination'), )
@@ -239,7 +237,8 @@ class Interface(Base):
                                    cascade="all, delete-orphan",
                                    lazy='select') # 'select' loads related objects when accessed
     
-    #fib_entries = relationship("Fib", back_populates="resolved_interface")
+    fib_entries = relationship("Fib", back_populates="resolved_interface")
+
 
 class InterfaceIPv6Address(Base):
     """

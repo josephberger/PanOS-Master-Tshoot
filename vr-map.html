@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MT-Mapper Visualization</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: #f0f2f5;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            color: #333;
+        }
+        .tooltip {
+            position: absolute;
+            text-align: left;
+            padding: 8px;
+            font: 12px sans-serif;
+            background: #fff;
+            border: 1px solid #ccc;
+            border-radius: 8px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s;
+            max-width: 300px;
+            word-wrap: break-word;
+        }
+        .controls {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background: #fff;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            max-height: 95vh;
+            display: flex;
+            flex-direction: column;
+        }
+        #controls-header {
+            text-align: center;
+            cursor: pointer;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #eee;
+            margin-bottom: 10px;
+        }
+        #controls-header strong {
+            font-size: 16px;
+        }
+        .controls label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+        }
+        .controls input, .controls select, .controls button {
+            margin-bottom: 15px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+            width: 220px;
+            box-sizing: border-box;
+            flex-shrink: 0;
+        }
+        .controls button {
+            cursor: pointer;
+            color: white;
+            border: none;
+        }
+        .button-group {
+            margin-top: -5px;
+        }
+        .button-group button {
+            display: block;
+            width: 100%;
+        }
+
+        #clearStorageBtn { background-color: #e74c3c; }
+        #clearStorageBtn:hover { background-color: #c0392b; }
+        #findSharedBtn { background-color: #27ae60; }
+        #findSharedBtn:hover { background-color: #229954; }
+
+        #sharedFibResults {
+            margin-top: 5px;
+            overflow-y: auto;
+            border-top: 1px solid #eee;
+            padding-top: 10px;
+        }
+        .shared-fib-item {
+            margin-bottom: 12px;
+            font-size: 12px;
+        }
+        .shared-fib-item strong {
+            font-size: 14px;
+            color: #333;
+            word-break: break-all;
+        }
+        .shared-fib-item ul {
+            list-style: none;
+            padding-left: 10px;
+            margin: 4px 0;
+        }
+        .view-corr-link {
+            cursor: pointer;
+            color: #007bff;
+            text-decoration: underline;
+            font-size: 12px;
+        }
+
+        svg {
+            border: 1px solid #ddd;
+            background-color: #ffffff;
+            border-radius: 8px;
+        }
+        .link { fill: none; stroke: #999; stroke-width: 2px; }
+        .link-label { font-size: 11px; fill: #333; }
+        .ngfw-container { stroke: #34495e; stroke-width: 2px; fill: #ecf0f1; }
+        .ngfw-label { font-size: 16px; font-weight: bold; fill: #2c3e50; }
+        .vr-circle { fill: #3498db; stroke: #2980b9; stroke-width: 2px; }
+        .vr-label { fill: white; font-weight: bold; }
+        .data-group { transition: opacity 0.3s ease-in-out; }
+        .data-box { stroke: #e74c3c; stroke-width: 2px; fill: #fbe9e7; cursor: pointer; transition: stroke 0.3s ease-in-out, stroke-width 0.3s ease-in-out; }
+        .data-label { fill: #c0392b; font-size: 12px; font-weight: 500; }
+        .data-box-default { stroke: #1e8449; stroke-width: 2.5px; fill: #e9f7ef; }
+        .data-label-default { fill: #145a32; font-weight: bold; }
+        .data-box-drop { fill: #e5e7e9; stroke: #979a9a; }
+        .data-label-drop { fill: #566573; font-weight: bold; font-size: 14px; }
+        .data-box-nextvr { fill: #eaf2f8; stroke: #3498db; }
+        .data-label-nextvr { fill: #2e86c1; font-weight: bold; font-size: 14px; }
+        .highlight .data-box { stroke: #007bff; stroke-width: 4px; }
+        .faded { opacity: 0.2; }
+        .fib-hover-trigger rect { fill: rgba(0,0,0,0.05); }
+        .fib-hover-trigger:hover rect { fill: rgba(0,0,0,0.15); }
+        .fib-hover-trigger text { font-size: 9px; fill: #333; pointer-events: none;}
+        .fib-node-corr rect { fill: #e9f7ef; stroke: #1e8449; stroke-width: 2.5px; }
+        .fib-node-corr text { fill: #145a32; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="visualization"></div>
+<div class="tooltip"></div>
+<div class="controls">
+    <div id="controls-header">
+        <strong>Menu</strong> <span id="menu-toggle-icon">▲</span>
+    </div>
+    <div id="controls-body">
+        <div>
+            <label for="vrSelector">1. Select Saved Map:</label>
+            <select id="vrSelector"></select>
+            <label for="fileInput">2. Or Load New Map:</label>
+            <input type="file" id="fileInput" accept=".json">
+            <label for="searchInput">3. Search This Map:</label>
+            <input type="text" id="searchInput" placeholder="e.g., trust, 1/1, 10.0...">
+            <div class="button-group">
+                <button id="findSharedBtn">Find Shared Networks</button>
+                <button id="clearStorageBtn">Clear All Saved Maps</button>
+            </div>
+        </div>
+        <div id="sharedFibResults"></div>
+    </div>
+</div>
+
+<script>
+    const width = 1200;
+    const height = 900;
+    const svg = d3.select("#visualization").append("svg")
+        .attr("width", width)
+        .attr("height", height);
+
+    const tooltip = d3.select(".tooltip");
+    const fileInput = document.getElementById('fileInput');
+    const searchInput = document.getElementById('searchInput');
+    const vrSelector = document.getElementById('vrSelector');
+    const clearStorageBtn = document.getElementById('clearStorageBtn');
+    const findSharedBtn = document.getElementById('findSharedBtn');
+    const STORAGE_PREFIX = "mt-mapper-";
+
+    function getMapKey(mapData) { return `${mapData.ngfw.name} - ${mapData.ngfw.children[0].name}`; }
+    function saveMapToStorage(key, mapData) { localStorage.setItem(STORAGE_PREFIX + key, JSON.stringify(mapData)); }
+    function loadMapFromStorage(key) { const s = localStorage.getItem(STORAGE_PREFIX + key); if(s){ drawMap(JSON.parse(s)); searchInput.value = ''; } }
+    function populateDropdown() {
+        const currentSelection = vrSelector.value;
+        vrSelector.innerHTML = '<option value="">-- Select a map --</option>';
+        const keys = [];
+        for (let i = 0; i < localStorage.length; i++) {
+            if (localStorage.key(i).startsWith(STORAGE_PREFIX)) {
+                keys.push(localStorage.key(i));
+            }
+        }
+        keys.sort().forEach(key => {
+            const mapKey = key.replace(STORAGE_PREFIX, '');
+            const option = document.createElement('option');
+            option.value = mapKey;
+            option.textContent = mapKey;
+            vrSelector.appendChild(option);
+        });
+        vrSelector.value = currentSelection;
+    }
+    function clearAllStorage() { if(confirm("Are you sure? This cannot be undone.")){Object.keys(localStorage).forEach(k=>{if(k.startsWith(STORAGE_PREFIX)){localStorage.removeItem(k);}}); populateDropdown(); svg.selectAll("*").remove();}}
+    
+    function findSharedNetworks() {
+        const fibIndex = {};
+        for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (!key.startsWith(STORAGE_PREFIX)) continue;
+            
+            const mapKey = key.replace(STORAGE_PREFIX, '');
+            const mapData = JSON.parse(localStorage.getItem(key));
+            
+            mapData.ngfw.children[0].children.forEach(iface => {
+                if (iface.type === 'interface' && iface.children) {
+                    iface.children.forEach(child => {
+                        if (child.type === 'fib-container') {
+                            child.fibs.forEach(fib => {
+                                if (!fibIndex[fib]) fibIndex[fib] = [];
+                                fibIndex[fib].push({
+                                    mapKey: mapKey,
+                                    interface: iface.name,
+                                    zone: iface.zone || 'unzoned'
+                                });
+                            });
+                        }
+                    });
+                }
+            });
+        }
+
+        const sharedFibs = Object.entries(fibIndex).filter(([fib, connections]) => connections.length > 1);
+        const resultsContainer = document.getElementById('sharedFibResults');
+        resultsContainer.innerHTML = '<h4>--- Shared Networks ---</h4>';
+
+        if (sharedFibs.length === 0) {
+            resultsContainer.innerHTML += '<p>No shared networks found.</p>';
+            return;
+        }
+
+        sharedFibs.sort().forEach(([fib, connections]) => {
+            const itemDiv = document.createElement('div');
+            itemDiv.className = 'shared-fib-item';
+            const listItems = connections.map(c => `<li>• <b>${c.mapKey}</b> via ${c.interface} (${c.zone})</li>`).join('');
+            itemDiv.innerHTML = `<strong>${fib}</strong><ul>${listItems}</ul>`;
+            
+            const link = document.createElement('a');
+            link.className = 'view-corr-link';
+            link.textContent = '[ View Correlation ]';
+            link.onclick = () => drawCorrelationMap(fib, connections);
+            itemDiv.appendChild(link);
+            resultsContainer.appendChild(itemDiv);
+        });
+    }
+
+    function drawCorrelationMap(sharedFib, connections) {
+        svg.selectAll("*").remove();
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const radius = Math.min(width, height) / 2.8;
+
+        const nodeCoords = connections.map((conn, i) => {
+            const angle = (i / connections.length) * 2 * Math.PI - (Math.PI / 2);
+            return {
+                x: centerX + radius * Math.cos(angle),
+                y: centerY + radius * Math.sin(angle),
+                data: conn
+            };
+        });
+
+        const linkGroup = svg.append("g");
+        const linkHaloGroup = svg.append("g");
+        const linkLabelGroup = svg.append("g");
+        const nodeGroup = svg.append("g");
+
+        nodeCoords.forEach(d => {
+            linkGroup.append("line")
+                .attr("class", "link")
+                .attr("x1", centerX).attr("y1", centerY)
+                .attr("x2", d.x).attr("y2", d.y);
+        });
+        
+        nodeCoords.forEach(d => {
+            const midX = (centerX + d.x) / 2;
+            const midY = (centerY + d.y) / 2;
+            const linkLabel = linkLabelGroup.append("text")
+                .attr("class", "link-label")
+                .attr("x", midX).attr("y", midY)
+                .attr("text-anchor", "middle");
+            
+            linkLabel.append("tspan").style("font-weight", "bold").text(d.data.zone);
+            linkLabel.append("tspan").attr("x", midX).attr("dy", "1.2em").text(d.data.interface);
+
+            const bbox = linkLabel.node().getBBox();
+            linkHaloGroup.append("rect")
+                .attr("x", bbox.x - 2).attr("y", bbox.y - 2)
+                .attr("width", bbox.width + 4).attr("height", bbox.height + 4)
+                .style("fill", "white");
+        });
+
+        nodeCoords.forEach(d => {
+            const [ngfwName, vrName] = d.data.mapKey.split(' - ');
+            const vrNodeGroup = nodeGroup.append("g").attr("transform", `translate(${d.x}, ${d.y})`);
+            
+            vrNodeGroup.append("rect").attr("class", "ngfw-container").attr("width", 150).attr("height", 100).attr("x", -75).attr("y", -50).attr("rx", 10);
+            vrNodeGroup.append("text").attr("class", "ngfw-label").style("font-size", "12px").text(ngfwName).attr("text-anchor", "middle").attr("dy", -35);
+            
+            const vrCircle = vrNodeGroup.append("g");
+            vrCircle.append("circle").attr("class", "vr-circle").attr("r", 30);
+            vrCircle.append("text").attr("class", "vr-label").style("font-size", "10px").text(vrName).attr("text-anchor", "middle").attr("dy", "0.3em");
+        });
+        
+        const fibNode = svg.append("g").attr("class", "fib-node-corr").attr("transform", `translate(${centerX}, ${centerY})`);
+        fibNode.append("rect").attr("width", 220).attr("height", 50).attr("x", -110).attr("y", -25).attr("rx", 5);
+        fibNode.append("text").attr("text-anchor", "middle").attr("dy", "0.3em").text(sharedFib);
+
+        const backButton = svg.append("g").attr("transform", "translate(20, 20)").style("cursor", "pointer")
+            .on("click",()=>{svg.selectAll("*").remove(); document.getElementById('sharedFibResults').innerHTML = ''; const last = vrSelector.value; if(last) loadMapFromStorage(last);});
+        backButton.append("rect").attr("width", 80).attr("height", 30).attr("rx", 5).style("fill", "#ddd");
+        backButton.append("text").attr("x", 40).attr("y", 15).attr("dy", ".3em").attr("text-anchor", "middle").text("« Back");
+    }
+
+    function handleSearch(event) {
+        const searchTerm = event.target.value.trim().toLowerCase();
+        const allGroups = d3.selectAll(".data-group");
+        const allLinks = d3.selectAll(".link");
+        if (!searchTerm) {
+            allGroups.classed("highlight", false).classed("faded", false);
+            allLinks.classed("faded", false);
+            return;
+        }
+        allGroups.classed("faded", true).classed("highlight", false);
+        allLinks.classed("faded", true);
+        allGroups.each(function(d) {
+            const group = d3.select(this);
+            const link = d3.select(`#link-for-${d.name.replace(/[.\/]/g, '-')}`);
+            let searchableContent = [d.name, d.zone, d.ip, d.vsys, d.tag];
+            const fibNode = d.children.find(c => c.type === 'fib-container');
+            if (fibNode && fibNode.fibs) {
+                searchableContent = searchableContent.concat(fibNode.fibs);
+            }
+            if (d.ipv6_addresses && d.ipv6_addresses.length > 0) {
+                searchableContent = searchableContent.concat(d.ipv6_addresses);
+            }
+            const isMatch = searchableContent.some(content => content && content.toLowerCase().includes(searchTerm));
+            if (isMatch) {
+                group.classed("faded", false).classed("highlight", true);
+                link.classed("faded", false);
+            }
+        });
+    }
+    
+    function drawMap(data) {
+        svg.selectAll("*").remove();
+        const nodes = data.ngfw.children[0].children || [];
+        const centerX = width / 2;
+        const centerY = height / 2;
+        const nodeRadius = 250;
+
+        const ngfwGroup = svg.append("g").attr("transform", `translate(${centerX}, ${centerY})`);
+        ngfwGroup.append("rect").attr("class", "ngfw-container").attr("width", 300).attr("height", 200).attr("x", -150).attr("y", -100).attr("rx", 10);
+        ngfwGroup.append("text").attr("class", "ngfw-label").text(data.ngfw.name).attr("text-anchor", "middle").attr("dy", -80);
+        
+        nodes.forEach((node, i) => {
+            const angle = (i / nodes.length) * 2 * Math.PI - (Math.PI / 2);
+            const boxX = centerX + nodeRadius * Math.cos(angle);
+            const boxY = centerY + nodeRadius * Math.sin(angle);
+            
+            // --- CORRECTED: Use x1,y1,x2,y2 for <line> instead of d ---
+            svg.append("line")
+                .attr("class", "link")
+                .attr("x1", centerX).attr("y1", centerY)
+                .attr("x2", boxX).attr("y2", boxY);
+            
+            const fibNode = node.children.find(c => c.type === 'fib-container');
+            if (fibNode) {
+                const dataGroup = svg.append("g").attr("class", "data-group").datum(node).attr("transform", `translate(${boxX}, ${boxY})`);
+                
+                if (node.type === 'drop' || node.type === 'next-vr') {
+                    const isDrop = node.type === 'drop';
+                    dataGroup.append("rect")
+                        .attr("class", `data-box ${isDrop ? 'data-box-drop' : 'data-box-nextvr'}`)
+                        .attr("width", 120).attr("height", 60).attr("x", -60).attr("y", -30).attr("rx", 5)
+                        .on("mouseover", (event, d) => {
+                            tooltip.transition().duration(200).style("opacity", .9);
+                            tooltip.html(`<strong><u>FIBs routed to ${node.name}</u></strong><br>${fibNode.fibs.join("<br>")}`)
+                                .style("left", (event.pageX + 15) + "px").style("top", (event.pageY - 28) + "px");
+                        }).on("mouseout", () => tooltip.transition().duration(500).style("opacity", 0));
+                    dataGroup.append("text").attr("class", isDrop ? 'data-label-drop' : 'data-label-nextvr').attr("text-anchor", "middle").attr("dy", "0.3em").text(node.name);
+
+                } else { // This is a regular interface
+                    const isDefaultRoute = fibNode.fibs.includes("0.0.0.0/0");
+                    dataGroup.append("rect")
+                        .attr("class", "data-box" + (isDefaultRoute ? " data-box-default" : ""))
+                        .attr("width", 120).attr("height", 60).attr("x", -60).attr("y", -30).attr("rx", 5)
+                        .on("mouseover", (event, d) => {
+                            tooltip.transition().duration(200).style("opacity", .9);
+                            let infoHtml = `<strong><u>Interface Details</u></strong><br>
+                                            <strong>IP:</strong> ${d.ip || 'N/A'}<br>
+                                            <strong>vSys:</strong> ${d.vsys || 'N/A'}<br>
+                                            <strong>VLAN Tag:</strong> ${d.tag || 'None'}`;
+                            if (d.ipv6_enabled && d.ipv6_addresses && d.ipv6_addresses.length > 0) {
+                                infoHtml += `<br><strong>IPv6 Addresses:</strong><br>${d.ipv6_addresses.join('<br>')}`;
+                            }
+                            tooltip.html(infoHtml).style("left", (event.pageX + 15) + "px").style("top", (event.pageY - 28) + "px");
+                        }).on("mouseout", () => tooltip.transition().duration(500).style("opacity", 0));
+                    
+                    const label = dataGroup.append("text").attr("class", "data-label" + (isDefaultRoute ? " data-label-default" : "")).attr("text-anchor", "middle");
+                    label.append("tspan").attr("x", 0).attr("dy", "-0.6em").style("font-weight", "bold").text(node.zone || 'unzoned');
+                    label.append("tspan").attr("x", 0).attr("dy", "1.4em").text(node.name);
+
+                    const fibHoverTarget = dataGroup.append("g").attr("class", "fib-hover-trigger").attr("transform", `translate(25, 12)`);
+                    fibHoverTarget.append("rect").attr("width", 30).attr("height", 15).attr("rx", 3);
+                    fibHoverTarget.append("text").text("FIBs").attr("x", 15).attr("y", 7.5).attr("dy", "0.3em").attr("text-anchor", "middle");
+                    fibHoverTarget.on("mouseover", (event) => {
+                        tooltip.transition().duration(200).style("opacity", .9);
+                        tooltip.html(`<strong><u>FIBs for ${node.name}</u></strong><br>${fibNode.fibs.join("<br>")}`)
+                            .style("left", (event.pageX + 15) + "px").style("top", (event.pageY - 28) + "px");
+                    }).on("mouseout", () => tooltip.transition().duration(500).style("opacity", 0));
+                }
+            }
+        });
+        
+        const vrGroup = svg.append("g").attr("transform", `translate(${centerX}, ${centerY})`);
+        vrGroup.append("circle").attr("class", "vr-circle").attr("r", 50);
+        vrGroup.append("text").attr("class", "vr-label").text(data.ngfw.children[0].name).attr("text-anchor", "middle").attr("dy", "0.3em");
+    }
+    
+    // --- SETUP LISTENERS ---
+    const controlsHeader = document.getElementById('controls-header');
+    const controlsBody = document.getElementById('controls-body');
+    const menuToggleIcon = document.getElementById('menu-toggle-icon');
+    controlsHeader.addEventListener('click', () => { const isCollapsed = controlsBody.style.display === 'none'; if (isCollapsed) { controlsBody.style.display = 'block'; menuToggleIcon.textContent = '▲'; } else { controlsBody.style.display = 'none'; menuToggleIcon.textContent = '▼'; }});
+    searchInput.addEventListener('input', handleSearch);
+    clearStorageBtn.addEventListener('click', clearAllStorage);
+    findSharedBtn.addEventListener('click', findSharedNetworks);
+    vrSelector.addEventListener('change', (event) => { if (event.target.value) { loadMapFromStorage(event.target.value); document.getElementById('sharedFibResults').innerHTML = ''; } else { svg.selectAll("*").remove(); }});
+    fileInput.addEventListener('change', function(event) { const f=event.target.files[0];if(f){const r=new FileReader;r.onload=function(e){try{const t=JSON.parse(e.target.result);if(t.ngfw&&t.ngfw.name){const e=getMapKey(t);saveMapToStorage(e,t),populateDropdown(),vrSelector.value=e,drawMap(t)}else if(Object.keys(t).length>0){let e=0;for(const o in t)Object.prototype.hasOwnProperty.call(t,o)&&(t[o].ngfw&&t[o].ngfw.name&&(saveMapToStorage(o,t[o]),e++));populateDropdown(),svg.selectAll("*").remove(),vrSelector.value="",e>0?alert(`Successfully loaded ${e} maps. Please select one from the dropdown.`):alert("Batch file does not contain valid map data.")}else alert("The JSON file format is not recognized.");searchInput.value="",fileInput.value=""}catch(e){alert(`Error processing file: ${e.message}`)}},r.readAsText(f)}});
+
+    // Initial Load
+    populateDropdown();
+</script>
+
+</body>
+</html>
