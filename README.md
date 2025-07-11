@@ -4,15 +4,18 @@ PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information f
 
 ## Version Changes
 
+**MT-UI**
+- Added a web-based user interface (MT-UI) for easier access to the MT CLI commands.
+- The MT-UI is a Flask-based web application that allows you to run MT CLI commands through a web interface.
+- To use the MT-UI, run the script with the `--ui` option:
+  ```bash
+  python mt-ui.py
+  ```
+Then Navigate to `http://localhost:5001` in your web browser.
+
 **Commands**
 - Added `show interfacesv6` which lists the ipv6 information for interfaces.
 - Added `--details` option to `show routes` command to show more details about NGFWs and Panorama.
-
-**Items**
-- log file `mt-cli.log` is now created in the same directory as the script.  Log customization is not available yet.
-
-**TSF Command BETA**
-- Removed
 
 **IPv6 Support**
 - Added IPv6 support for `show routes`, `show fibs`, `show interfacesv6`, `show bgp-peers` and `fib-lookup` commands.
@@ -45,11 +48,10 @@ source venv/bin/activate
 
 pip install -r requirements.txt
 ```
-or user the requirements-with-flask.txt file if you want to use the MT-UI.
+or use the requirements-with-flask.txt file if you want to use the MT-UI.
 ```bash
 pip install -r requirements-with-flask.txt
 ```
-
 
 Build the initial database (must be done before any other commands are available)
 ```bash
@@ -156,8 +158,6 @@ Here are some example commands to get you started:
 
 ## Wishlist items for furture versions.
 - `userid`: UserID information such as agents, connectivity status etc.
-- `csv export`: Export things like 'routes' or 'arps' to a CSV formatt.
-- `IPv6`: Support IPv6 items. (IPv6 support is in testing)
 - `Logical Routers`: Supoort the PanOS logical routers and Advanced Routing Engine (ARE). (ARE support is in testing)
 - `More BGP`: Support more BGP detailed items.
 - `OSPF`: Support OSPF items such as neighbors.
