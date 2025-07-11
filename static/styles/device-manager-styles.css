@@ -1,0 +1,283 @@
+/*
+ * Styles specifically for the Device Management page (devices.html)
+ */
+
+.management-main-content {
+    flex-grow: 1;
+    padding: 20px;
+    overflow: auto;
+    height: 100vh;
+    box-sizing: border-box;
+}
+
+/* Grid for the two-column layout */
+.management-grid {
+    display: grid;
+    grid-template-columns: 380px 1fr; /* Fixed width for forms, flexible for inventory */
+    gap: 20px;
+    height: calc(100vh - 40px); /* Full height minus parent padding */
+}
+
+/* Styling for the columns within the grid */
+.forms-column, .inventory-column {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.inventory-column h2, .forms-column h2 {
+    border-bottom: 1px solid #ddd;
+    padding-bottom: 10px;
+    margin-top: 0;
+    margin-bottom: 15px;
+    font-size: 18px;
+    flex-shrink: 0;
+}
+
+#device-inventory-list {
+    flex-grow: 1;
+    overflow-y: auto;
+    padding-right: 10px;
+}
+
+/* Style for the add device buttons */
+.form-container form button {
+    margin-top: 15px;
+    width: 100%;
+    padding: 8px;
+    color: white;
+    border: none;
+    border-radius: 4px; /* Matches menu buttons */
+    cursor: pointer;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+/* Device Item Styles */
+.device-item {
+    background-color: #f8f9f9;
+    border: 1px solid #e5e7e9;
+    border-radius: 5px;
+    padding: 10px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s, border-radius 0.3s ease-in-out;
+    position: relative;
+    z-index: 6;
+}
+
+.device-item:hover {
+    background-color: #f1f5f9;
+    border-color: #d1d5db;
+}
+
+.device-item-header { 
+    display: flex; 
+    justify-content: space-between; 
+    align-items: center; 
+    font-weight: bold; 
+}
+
+.device-item-header span { 
+    word-break: break-all; 
+}
+
+.device-item-details { 
+    font-size: 11px; 
+    color: #566573; 
+    margin-top: 5px; 
+    padding-top: 5px; 
+    border-top: 1px dashed #ddd; 
+}
+
+/* Delete button with SVG icon */
+.delete-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 5px;
+    margin-left: 10px;
+    line-height: 1;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background-color 0.2s;
+}
+
+.delete-btn .trash-icon {
+    stroke: #95a5a6; /* Softer gray color */
+    transition: stroke 0.2s;
+}
+
+.delete-btn:hover {
+    background-color: #fce8e6; /* Light red background */
+}
+
+.delete-btn:hover .trash-icon {
+    stroke: #c0392b; /* Darker red for the icon */
+}
+
+
+/* Styles for the accordion expand/collapse feature */
+.device-item.active {
+    background-color: #EBF8FF;
+    border-color: #3182CE;
+    border-bottom-right-radius: 0;
+    border-bottom-left-radius: 0;
+    margin-bottom: 0;
+}
+
+.device-detail-container {
+    background-color: #ffffff;
+    border: 1px solid #3182CE;
+    border-top: none;
+    border-radius: 0 0 8px 8px;
+    margin-top: -1px; /* Connect with the item above */
+    margin-bottom: 8px;
+    padding: 0 25px;
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height 0.5s ease-in-out, opacity 0.3s ease-in-out, padding 0.4s ease-in-out;
+    position: relative;
+    z-index: 5;
+}
+
+.device-detail-container.expanded {
+    max-height: 1000px; /* Large enough to fit any content */
+    opacity: 1;
+    padding: 25px;
+}
+
+/* Styles for the content inside the detail view */
+.placeholder-text {
+    color: #888;
+    text-align: center;
+    padding: 50px 0;
+    font-size: 16px;
+}
+
+.error-text {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.detail-header {
+    border-bottom: 1px solid #eee;
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+}
+
+.detail-header h1 {
+    margin: 0;
+    font-size: 24px;
+    color: #2c3e50;
+}
+
+.detail-header .detail-sub-header {
+    font-size: 14px;
+    color: #566573;
+    margin-top: 5px;
+}
+
+.detail-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+}
+
+.detail-section h3 {
+    font-size: 16px;
+    color: #34495e;
+    margin-top: 0;
+    margin-bottom: 15px;
+    border-bottom: 1px solid #f0f2f5;
+    padding-bottom: 8px;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 14px;
+    padding: 8px 0;
+    border-bottom: 1px solid #f7f7f7;
+}
+
+.detail-item .label {
+    font-weight: 500;
+    color: #566573;
+}
+
+.detail-item .value {
+    color: #1A202C;
+    font-family: 'Menlo', 'Consolas', monospace;
+}
+
+/* START OF NEW STYLES */
+
+/* Container for the new action buttons in the detail view */
+.detail-actions {
+    display: flex;
+    flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+    gap: 8px; /* Space between buttons */
+    padding: 0 0 15px 0; /* Padding below the buttons */
+    margin-bottom: 15px; /* Space between buttons and detail header */
+    border-bottom: 1px solid #e5e7e9; /* Separator line */
+}
+
+/* Individual style for the device action buttons */
+.button-action {
+    background-color: #f0f5ff; /* A light blue background */
+    color: #2d3748; /* Dark text for contrast */
+    border: 1px solid #c3dafe; /* A slightly darker blue border */
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+    text-align: center;
+}
+
+.button-action:hover {
+    background-color: #e6f0ff;
+    border-color: #a3bffa;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+.button-action:active {
+    background-color: #dbeaff;
+    border-color: #8daefa;
+}
+
+/* END OF NEW STYLES */
+
+/* Styling for the new device icons */
+/* Styling for the new device icons */
+.device-icon {
+    width: 44px; /* Changed from 22px */
+    height: 44px; /* Changed from 22px */
+    margin-right: 8px; /* Adds some space between the icon and the device name */
+    vertical-align: middle; /* Helps align the icon with the text */
+}
+
+/* New group for the icon and hostname to keep them together */
+.device-identity {
+    display: flex;
+    align-items: center;
+    overflow: hidden; /* Prevents long names from breaking the layout */
+}
+
+/* Styling for the new status indicator icons */
+.indicator-icon {
+    margin-left: 8px;
+    font-size: 16px;
+    cursor: help; /* Changes the cursor to a question mark on hover */
+    vertical-align: middle;
+}

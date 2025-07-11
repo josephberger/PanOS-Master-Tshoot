@@ -1,0 +1,261 @@
+/* /static/styles/mapper-styles.css */
+
+/* Main content area for the visualization */
+#visualization {
+    flex-grow: 1;
+    height: 100vh;
+}
+
+/* SVG container for the D3 map */
+svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    background-color: #f0f2f5;
+    border: none;
+    cursor: grab;
+}
+
+svg:active {
+    cursor: grabbing;
+}
+
+/* Tooltip (used by the map) */
+.tooltip {
+    position: absolute;
+    text-align: left;
+    padding: 8px;
+    font: 12px sans-serif;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s;
+    max-width: 300px;
+    word-wrap: break-word;
+    z-index: 20;
+}
+
+.tooltip strong {
+    font-weight: bold;
+    display: block;
+    margin-bottom: 5px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 4px;
+}
+
+/* Map title for "all maps" view */
+.map-title {
+    font-size: 24px;
+    font-weight: bold;
+    fill: #333;
+    text-anchor: middle;
+}
+
+/* --- Map Element Styles --- */
+
+.link {
+    fill: none;
+    stroke: #999;
+    stroke-width: 2px;
+}
+
+.ngfw-container {
+    stroke: #34495e;
+    stroke-width: 2px;
+    fill: #ecf0f1;
+}
+
+.ngfw-label {
+    font-size: 16px;
+    font-weight: bold;
+    fill: #2c3e50;
+}
+
+.vr-circle {
+    fill: #3498db;
+    stroke: #2980b9;
+    stroke-width: 2px;
+}
+
+.vr-label {
+    fill: white;
+    font-weight: bold;
+}
+
+.data-group {
+    transition: opacity 0.3s ease-in-out;
+    cursor: pointer;
+}
+
+.data-box {
+    stroke: #6c3483;
+    stroke-width: 2.5px;
+    fill: #e8daef;
+}
+
+.data-label {
+    fill: #6c3483;
+    font-size: 11px;
+}
+
+.data-label-special {
+    fill: #566573;
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.data-box-drop {
+    fill: #e5e7e9;
+    stroke: #979a9a;
+}
+
+.data-box-nextvr {
+    fill: #eaf2f8;
+    stroke: #3498db;
+}
+
+.data-box-default {
+    fill: #e9f7ef;
+    stroke: #27ae60;
+}
+
+.data-label-default > tspan {
+    fill: #145a32;
+}
+
+/* Search Highlighting Styles */
+.highlight .data-box {
+    stroke: #f1c40f;
+    stroke-width: 4px;
+}
+
+.faded {
+    opacity: 0.2;
+}
+
+/* --- Trace Path Node Styles --- */
+
+.trace-node text {
+    fill: #1A202C;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    font-size: 12px;
+    pointer-events: none;
+}
+
+.trace-node .zone-label {
+    font-weight: bold;
+    font-size: 14px;
+}
+
+.trace-ingress path {
+    fill: #EBF8FF;
+    stroke: #3182CE;
+    stroke-width: 2.5px;
+}
+
+.trace-ingress text {
+    fill: #2C5282;
+}
+
+.trace-egress .target-outer {
+    fill: #E6FFFA;
+    stroke: #2C7A7B;
+    stroke-width: 2.5px;
+}
+
+.trace-egress .target-middle {
+    fill: #B2F5EA;
+    stroke: none;
+}
+
+.trace-egress .target-inner {
+    fill: #38B2AC;
+    stroke: none;
+}
+
+.trace-egress text {
+    fill: #234E52;
+}
+
+.trace-ingress-egress .target-outer {
+    fill: #E6FFFA;
+    stroke: #2C7A7B;
+    stroke-width: 2.5px;
+}
+
+.trace-ingress-egress .target-middle {
+    fill: #B2F5EA;
+    stroke: none;
+}
+
+.trace-ingress-egress .star-overlay {
+    fill: #EBF8FF;
+    stroke: #3182CE;
+    stroke-width: 2.5px;
+    fill-opacity: 0.8;
+}
+
+.trace-ingress-egress text {
+    fill: #1A202C;
+}
+
+.trace-drop polygon {
+    fill: #FFFBEB;
+    stroke: #D69E2E;
+    stroke-width: 3px;
+}
+
+.trace-drop text {
+    fill: #975A16;
+    font-weight: bold;
+    font-size: 16px;
+}
+
+/* NEW: Styles for the enhanced inspector panel */
+.inspector-details-list {
+    list-style-type: none;
+    padding-left: 0;
+    margin: 5px 0 10px 0;
+}
+
+.inspector-details-list li {
+    font-size: 13px;
+    margin-bottom: 5px;
+    line-height: 1.4;
+}
+
+.detail-label {
+    font-weight: 600;
+    color: #566573;
+    min-width: 90px;
+    display: inline-block;
+    vertical-align: top;
+}
+
+.detail-value {
+    color: #2c3e50;
+    display: inline-block;
+}
+
+.inspector-fibs-header {
+    margin: 15px 0 5px 0;
+    font-size: 13px;
+    color: #34495e;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.inspector-fibs-list {
+    margin: 0 0 10px 0;
+    padding-left: 20px;
+    list-style-type: square;
+    font-size: 12px;
+}
+
+.inspector-fibs-list li {
+    color: #333;
+    margin-bottom: 4px;
+}

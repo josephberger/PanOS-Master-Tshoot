@@ -1,0 +1,138 @@
+/* Styles for Data Explorer Page */
+.explorer-main-content {
+    flex-grow: 1;
+    padding: 20px;
+    overflow: auto;
+    height: 100vh;
+    box-sizing: border-box;
+}
+
+#explorer-controls {
+    padding: 0;
+}
+
+#explorer-controls h3 {
+    margin-top: 0;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 10px;
+}
+
+#explorer-form label {
+    margin-top: 15px;
+    margin-bottom: 5px;
+    font-weight: 500;
+    display: block;
+}
+
+#explorer-form select,
+#explorer-form button {
+    width: 100%;
+    padding: 8px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+    margin-bottom: 10px;
+}
+
+#explorer-form button {
+    margin-top: 20px;
+}
+
+#on-demand-checkbox {
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+#results-header {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 10px;
+}
+
+/* UPDATED: Styles for the export icon button */
+#export-csv-btn {
+    padding: 0;
+    width: 34px;
+    height: 34px;
+    font-size: 20px;
+    line-height: 34px;
+    text-align: center;
+}
+
+.explorer-results {
+    background-color: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+    overflow: auto;
+}
+
+#results-container .placeholder-text {
+    color: #888;
+    text-align: center;
+    margin-top: 50px;
+    font-size: 16px;
+}
+
+#results-container .error-text {
+    color: #e74c3c;
+    font-weight: bold;
+}
+
+.results-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.results-table th,
+.results-table td {
+    padding: 8px 12px;
+    border: 1px solid #ddd;
+    text-align: left;
+    white-space: nowrap;
+}
+
+.results-table thead {
+    background-color: #f8f9f9;
+    font-weight: bold;
+}
+
+/* NEW: Style for sortable headers */
+.results-table thead th {
+    cursor: pointer;
+    user-select: none;
+}
+
+.results-table tbody tr:nth-child(even) {
+    background-color: #fdfdfd;
+}
+
+#message-container {
+    margin-top: 20px;
+    font-size: 12px;
+    color: #566573;
+}
+
+#message-container h5 {
+    margin: 0 0 5px 0;
+}
+
+#message-container pre {
+    background-color: #f0f2f5;
+    padding: 10px;
+    border-radius: 4px;
+    white-space: pre-wrap;
+}
+
+/* NEW: Styles for the filter input */
+#filter-controls {
+    margin-bottom: 10px;
+}
+
+#filter-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-sizing: border-box;
+}

@@ -45,6 +45,11 @@ source venv/bin/activate
 
 pip install -r requirements.txt
 ```
+or user the requirements-with-flask.txt file if you want to use the MT-UI.
+```bash
+pip install -r requirements-with-flask.txt
+```
+
 
 Build the initial database (must be done before any other commands are available)
 ```bash
@@ -73,11 +78,10 @@ python mt-cli.py refresh --ngfw <NGFW_NAME>
 1. All API calls are made through the Panorama so you do not need direct access to the NGFWs mgmt interface (unless its non-managed).
 2. The API Key that is generated for the Panorama and non-managed NGFWs is stored in the SQLite database.  Protect it!
 3. Recommend changing the `db_uri` variable in config.py to an absolute path where you would like it to reside.
-4. MT removes junk such as interfaces without zones or vrs, NGFWs in Panorama but not connected before entering it into the database.  You may find missing interfaces etc when using the print options.
+4. MT removes junk such as interfaces without zones or vrs, NGFWs in Panorama but not connected before entering it into the database.  You may find missing interfaces etc when using the show options.
 5. Recommend using a read-only account on Panorama/NGFWs for security purposes.
 6. Recommend NOT utilizing on central server, intention is to run on workstation or jump host.
-7. Currently only supports IPv4, IPv6 support coming soon.
-8. For ease of use, most queries are based on hostnames once added/imported.  If you have multiple NGFWs with the same hostname, MT will add a `-1` to the back of the hostname.
+7. For ease of use, most queries are based on hostnames once added/imported.  If you have multiple NGFWs with the same hostname, MT will add a `-1` to the back of the hostname.
 
 ## MT-CLI Usage
 To use `mt-cli.py`, open your terminal and navigate to the directory containing the script. Then, you can execute various commands with the following syntax:

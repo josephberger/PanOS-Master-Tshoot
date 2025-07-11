@@ -24,6 +24,7 @@ import ipaddress
 import datetime
 import time
 import logging
+import copy
 
 from sqlalchemy import create_engine, select, exc as sqlalchemy_exc
 from sqlalchemy.orm import sessionmaker, joinedload, Session
@@ -129,7 +130,358 @@ class MTController:
         except Exception as e:
              # Catch any other unexpected errors during the initialization process
              raise MTControllerException(f"Unexpected error during MTController initialization: {e}")
+    # ===========================================================================
+    # Flask API Methods
+    # ===========================================================================
+    def get_all_map_keys(self) -> list:
+        """
+        Retrieves a sorted list of all possible map keys (e.g., "NGFW-1 - vr:default").
+        Used to populate the UI dropdown menu.
+        """
+        logging.debug("Fetching all map keys for UI.")
+        map_keys = []
+        try:
+            with self._Session() as session:
+                # Eagerly load the ngfw relationship to avoid extra queries per VR
+                all_vrs = session.query(VirtualRouter).options(joinedload(VirtualRouter.ngfw)).all()
+                for vr_obj in all_vrs:
+                    if vr_obj.ngfw:
+                        map_keys.append(f"{vr_obj.ngfw.hostname} - {vr_obj.name}")
+            return sorted(map_keys)
+        except sqlalchemy_exc.SQLAlchemyError as e:
+            raise MTControllerException(f"Database error fetching map keys: {e}")
 
+    def get_map_by_key(self, map_key: str) -> dict:
+        """
+        Gets the data for a single map, identified by its key (e.g., "FW-NAME - VR-NAME").
+        """
+        logging.info(f"API call to get_map_by_key with key: '{map_key}'")
+        try:
+            parts = map_key.split(' - ', 1)
+            if len(parts) != 2:
+                logging.warning(f"Invalid map key format: '{map_key}'")
+                return None
+            
+            ngfw_hostname, vr_name = parts[0].strip(), parts[1].strip()
+            logging.info(f"Searching for NGFW hostname: '{ngfw_hostname}' and VR name: '{vr_name}'")
+
+            with self._Session() as session:
+                vr_obj = session.query(VirtualRouter).join(Ngfw).filter(
+                    Ngfw.hostname == ngfw_hostname,
+                    VirtualRouter.name == vr_name
+                ).options(
+                    joinedload(VirtualRouter.ngfw).subqueryload(Ngfw.virtual_routers), # Load sibling VRs
+                    joinedload(VirtualRouter.interfaces).joinedload(Interface.ipv6_addresses),
+                    joinedload(VirtualRouter.interfaces).subqueryload(Interface.fib_entries) # Load FIBs per interface
+                ).first()
+
+                if not vr_obj:
+                    logging.warning(f"No match found in database for NGFW '{ngfw_hostname}' and VR '{vr_name}'.")
+                    return None
+
+                logging.info(f"Found match for {map_key}. Generating map data.")
+                map_data = self._generate_ui_map_for_vr(vr_obj, session)
+                return map_data
+
+        except sqlalchemy_exc.SQLAlchemyError as e:
+            logging.error(f"Database error fetching map for key {map_key}: {e}", exc_info=True)
+            raise MTControllerException(f"Database error fetching map for key {map_key}: {e}")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred in get_map_by_key for key {map_key}: {e}", exc_info=True)
+            raise MTControllerException(f"An unexpected error occurred for key {map_key}: {e}")
+
+    def get_all_maps_for_ui(self) -> dict:
+        """
+        Generates the data for all maps in the format required by the D3.js frontend.
+        """
+        logging.debug("Generating data for all maps for UI.")
+        maps_data = {}
+        try:
+            with self._Session() as session:
+                all_ngfws = session.query(Ngfw).options(
+                    joinedload(Ngfw.virtual_routers).joinedload(VirtualRouter.interfaces).joinedload(Interface.ipv6_addresses),
+                    joinedload(Ngfw.virtual_routers).joinedload(VirtualRouter.interfaces).subqueryload(Interface.fib_entries)
+                ).all()
+
+                for ngfw in all_ngfws:
+                    for vr_obj in ngfw.virtual_routers:
+                        map_key = f"{ngfw.hostname} - {vr_obj.name}"
+                        # Pass the entire ngfw object to the helper
+                        maps_data[map_key] = self._generate_ui_map_for_vr(vr_obj, session, ngfw)
+            return maps_data
+        except sqlalchemy_exc.SQLAlchemyError as e:
+            raise MTControllerException(f"Database error generating map data: {e}")
+
+    def _generate_ui_map_for_vr(self, vr_obj: VirtualRouter, session, parent_ngfw=None) -> dict:
+        """
+        Helper function to generate the D3.js JSON structure for a single VR object.
+        """
+        vr_children = []
+        zones = {}
+        processed_fib_ids = set()
+
+        # 1. Group interfaces by security zone and collect their FIBs
+        for iface_obj in vr_obj.interfaces:
+            zone_name = iface_obj.zone or "unzoned"
+            if zone_name not in zones:
+                zones[zone_name] = {"name": zone_name, "type": "zone", "interfaces": []}
+            
+            # Get FIBs associated with this interface
+            fib_destinations = [fib.destination for fib in iface_obj.fib_entries if fib.destination]
+            for fib in iface_obj.fib_entries:
+                processed_fib_ids.add(fib.id)
+
+            zones[zone_name]["interfaces"].append({
+                "name": iface_obj.name, "ip": iface_obj.ip, "tag": iface_obj.tag,
+                "ipv6_enabled": iface_obj.ipv6_enabled,
+                "ipv6_addresses": [ipv6.address for ipv6 in iface_obj.ipv6_addresses],
+                "fibs": fib_destinations
+            })
+        
+        vr_children.extend(list(zones.values()))
+
+        # 2. Process remaining FIBs for 'drop' and 'next-vr' types
+        drop_fibs = []
+        next_vr_groups = {}
+        
+        # Get all VR names on the same NGFW for validation
+        if parent_ngfw is None:
+            parent_ngfw = vr_obj.ngfw
+        all_vr_names_on_ngfw = {vr.name for vr in parent_ngfw.virtual_routers}
+
+        # Query all FIBs for this VR once
+        all_vr_fibs = session.query(Fib).filter(Fib.virtual_router_id == vr_obj.id).all()
+
+        for fib_obj in all_vr_fibs:
+            # Skip if already processed via an interface
+            if fib_obj.id in processed_fib_ids:
+                continue
+
+            # --- START: Corrected Logic ---
+            # Check for drop routes by looking at the nexthop value
+            if fib_obj.nexthop == 'drop':
+                drop_fibs.append(fib_obj.destination)
+                continue # Move to next fib object
+
+            # Check for next-vr routes by looking for a '/' in the interface name
+            if fib_obj.interface and '/' in fib_obj.interface:
+                # The destination VR name is the part before the '/'
+                #dest_vr_candidate = fib_obj.interface.split('/')[0]
+                dest_vr_candidate = fib_obj.nexthop
+                # Validate that this is a real VR on the same firewall
+                if dest_vr_candidate in all_vr_names_on_ngfw:
+                    if dest_vr_candidate not in next_vr_groups:
+                        next_vr_groups[dest_vr_candidate] = []
+                    next_vr_groups[dest_vr_candidate].append(fib_obj.destination)
+            # --- END: Corrected Logic ---
+
+        # 3. Add the special nodes to the children list
+        if drop_fibs:
+            vr_children.append({"name": "drop", "type": "drop", "fibs": sorted(list(set(drop_fibs)))})
+
+        for dest_vr, fibs in sorted(next_vr_groups.items()):
+            # Use the actual destination VR name for the node
+            vr_children.append({"name": dest_vr, "type": "next-vr", "fibs": sorted(list(set(fibs)))})
+
+        # 4. Construct the final map JSON structure
+        return {
+            "ngfw": {
+                "name": vr_obj.ngfw.hostname,
+                "children": [{"name": vr_obj.name, "children": vr_children}]
+            }
+        }
+
+    def get_all_devices_for_ui(self):
+        """
+        Retrieves a combined list of all Panoramas and NGFWs for display.
+        """
+        logging.debug("Fetching all devices for UI inventory.")
+        devices = {'panoramas': [], 'ngfws': []}
+        try:
+            with self._Session() as session:
+                panoramas = session.query(Panorama).all()
+                for pan in panoramas:
+                    devices['panoramas'].append({
+                        'hostname': pan.hostname,
+                        'serial_number': pan.serial_number,
+                        'ip_address': pan.ip_address,
+                        'sw_version': pan.sw_version
+                    })
+
+                ngfws = session.query(Ngfw).options(joinedload(Ngfw.panorama)).all()
+                for ngfw in ngfws:
+                    # UPDATED to include the new fields for the indicators
+                    devices['ngfws'].append({
+                        'hostname': ngfw.hostname,
+                        'serial_number': ngfw.serial_number,
+                        'ip_address': ngfw.ip_address,
+                        'model': ngfw.model,
+                        'panorama': ngfw.panorama.hostname if ngfw.panorama else 'Standalone',
+                        'last_update': ngfw.last_update or 'Never',
+                        'alt_ip': ngfw.alt_ip,
+                        'alt_serial': ngfw.alt_serial
+                    })
+            return devices
+        except sqlalchemy_exc.SQLAlchemyError as e:
+            raise MTControllerException(f"Database error fetching device list: {e}")
+
+    # --- START: New Method for Map-Based Trace ---
+    def trace_path_on_map(self, src_ip_str: str, dst_ip_str: str, map_key: str = None) -> dict:
+        """
+        Performs two calculated FIB lookups for a source and destination IP,
+        and returns a filtered map structure containing only the ingress and egress
+        trace nodes, including special handling for DROP routes.
+        """
+        logging.info(f"Tracing path on map. Source: {src_ip_str}, Destination: {dst_ip_str}, Map Key: {map_key or 'All'}")
+
+        vr_filter = None
+        ngfw_filter = None
+        if map_key:
+            ngfw_filter, vr_filter = [part.strip() for part in map_key.split(' - ', 1)]
+
+        src_lookup_data = self.calculate_fib_lookup(src_ip_str, vr_query=vr_filter, ngfw_query=ngfw_filter)
+        dst_lookup_data = self.calculate_fib_lookup(dst_ip_str, vr_query=vr_filter, ngfw_query=ngfw_filter)
+
+        src_results = src_lookup_data.get('results')
+        dst_results = dst_lookup_data.get('results')
+
+        if not src_results or not dst_results:
+            return None
+
+        ingress_map = {f"{res['ngfw']} - {res['virtual_router']}": res for res in src_results}
+        egress_map = {f"{res['ngfw']} - {res['virtual_router']}": res for res in dst_results}
+
+        if map_key:
+            full_map_data = {map_key: self.get_map_by_key(map_key)}
+        else:
+            full_map_data = self.get_all_maps_for_ui()
+
+        traced_maps = {}
+
+        for key, map_data in full_map_data.items():
+            if not map_data: continue
+
+            ingress_result = ingress_map.get(key)
+            egress_result = egress_map.get(key)
+
+            if not ingress_result or not egress_result:
+                continue
+
+            new_map_data = copy.deepcopy(map_data)
+            trace_nodes = []
+
+            # Create ingress node
+            if ingress_result:
+                if ingress_result.get('nexthop') == 'drop':
+                    trace_nodes.append({"name": "DROP!!", "type": "drop", "trace_type": "ingress"})
+                elif ingress_result.get('interface'):
+                    trace_nodes.append({
+                        "name": ingress_result['zone'],
+                        "interface_name": ingress_result['interface'],
+                        "type": "zone",
+                        "trace_type": "ingress"
+                    })
+
+            # Create egress node
+            if egress_result:
+                is_ingress_drop = ingress_result and ingress_result.get('nexthop') == 'drop'
+                is_egress_drop = egress_result.get('nexthop') == 'drop'
+                is_same_interface = ingress_result and ingress_result.get('interface') and ingress_result.get('interface') == egress_result.get('interface')
+
+                if is_ingress_drop and is_egress_drop:
+                    # If both are drops, just modify the existing ingress node
+                    for node in trace_nodes:
+                        if node.get('trace_type') == 'ingress':
+                            node['trace_type'] = 'ingress-egress'
+                            break
+                elif is_same_interface:
+                     for node in trace_nodes:
+                        if node.get('trace_type') == 'ingress':
+                            node['trace_type'] = 'ingress-egress'
+                            break
+                elif is_egress_drop:
+                    trace_nodes.append({"name": "DROP!!", "type": "drop", "trace_type": "egress"})
+                elif egress_result.get('interface'):
+                    trace_nodes.append({
+                        "name": egress_result['zone'],
+                        "interface_name": egress_result['interface'],
+                        "type": "zone",
+                        "trace_type": "egress"
+                    })
+
+            if trace_nodes:
+                new_map_data['ngfw']['children'][0]['children'] = trace_nodes
+                traced_maps[key] = new_map_data
+
+        return traced_maps if not map_key else traced_maps.get(map_key)
+    # --- END: New Method ---
+
+    def calculate_fib_lookup_for_map(self, ip_address_str: str, map_key: str = None) -> dict:
+        """
+        Performs a calculated FIB lookup and returns a filtered map structure
+        containing only the egress path for the given IP.
+        """
+        logging.info(f"Calculating map-based FIB lookup for IP: {ip_address_str}, Map Key: {map_key or 'All'}")
+
+        # 1. Perform the standard FIB lookup to find the egress interface/zone for each VR.
+        vr_filter = None
+        ngfw_filter = None
+        if map_key:
+            ngfw_filter, vr_filter = [part.strip() for part in map_key.split(' - ', 1)]
+        
+        lookup_results_data = self.calculate_fib_lookup(ip_address_str, vr_query=vr_filter, ngfw_query=ngfw_filter)
+        lookup_results = lookup_results_data.get('results')
+
+        if not lookup_results:
+            return None # No route found at all
+
+        # Create a simple lookup map of {map_key: egress_interface_name}
+        egress_map = {f"{res['ngfw']} - {res['virtual_router']}": res['interface'] for res in lookup_results}
+
+        # 2. Get the full, unfiltered map data.
+        if map_key:
+            full_map_data = {map_key: self.get_map_by_key(map_key)}
+        else:
+            full_map_data = self.get_all_maps_for_ui()
+
+        filtered_maps = {}
+
+        # 3. Filter each map based on the lookup results.
+        for key, map_data in full_map_data.items():
+            if not map_data: continue
+
+            egress_interface = egress_map.get(key)
+            if not egress_interface:
+                # This map didn't have a route for the IP, so we can skip it.
+                continue
+
+            # Deep copy the map data to avoid modifying the original cache/data
+  
+            new_map_data = copy.deepcopy(map_data)
+            
+            vr_children = new_map_data['ngfw']['children'][0]['children']
+            
+            # Find the node (zone, drop, or next-vr) that contains the egress interface.
+            final_node = None
+            if egress_interface == 'drop' or egress_interface.split('/')[0] in {vr['name'] for vr in vr_children if vr['type'] == 'next-vr'}:
+                # Handle drop or next-vr special cases
+                node_name = egress_interface.split('/')[0] # This will be 'drop' or the VR name
+                final_node = next((node for node in vr_children if node['name'] == node_name), None)
+            else:
+                # Find the zone that contains the interface
+                for zone in vr_children:
+                    if zone.get('type') == 'zone' and zone.get('interfaces'):
+                        if any(iface['name'] == egress_interface for iface in zone['interfaces']):
+                            final_node = zone
+                            break
+            
+            if final_node:
+                # Replace the list of children with only the node we found.
+                new_map_data['ngfw']['children'][0]['children'] = [final_node]
+                filtered_maps[key] = new_map_data
+
+        return filtered_maps if not map_key else filtered_maps.get(map_key)
+    
     # ==========================================================================
     # Internal API Fetch Helper Methods
     # ==========================================================================
@@ -951,10 +1303,124 @@ class MTController:
         except Exception as e:
              raise MTControllerException(f"Unexpected error during get_inventory: {e}")
 
-    def import_panorama_devices(self, pan_filter=None) -> list:
-        """ Imports NGFW details from associated Panoramas into the database. """
-        logging.info(f"Starting import of Panorama devices. Panorama filter: '{pan_filter if pan_filter else 'All'}'")
-        messages = []
+    # def import_panorama_devices(self, pan_filter=None) -> list:
+    #     """ Imports NGFW details from associated Panoramas into the database. """
+    #     logging.info(f"Starting import of Panorama devices. Panorama filter: '{pan_filter if pan_filter else 'All'}'")
+    #     messages = []
+    #     try:
+    #         with self._Session() as session:
+    #             pan_query = session.query(Panorama)
+    #             if pan_filter:
+    #                 pan_query = pan_query.filter((Panorama.hostname == pan_filter) | (Panorama.ip_address == pan_filter))
+    #             panorama_list = pan_query.all()
+
+    #             if not panorama_list:
+    #                 messages.append(f"Panorama '{pan_filter or 'Any'}' not found in database.")
+    #                 return messages
+
+    #             existing_serials = {s for s, in session.query(Ngfw.serial_number).all()} | \
+    #                                {s for s, in session.query(Ngfw.alt_serial).filter(Ngfw.alt_serial.isnot(None)).all()}
+
+    #             for panorama_obj in panorama_list:
+    #                 messages.append(f"--- Processing Panorama: {panorama_obj.hostname} ({panorama_obj.ip_address}) ---")
+    #                 devices_api = self._fetch_api_panorama_devices(panorama_obj)
+
+    #                 if devices_api is None:
+    #                     messages.append(f"  Failed to fetch devices via API. Skipping.")
+    #                     continue
+    #                 if not devices_api:
+    #                      messages.append(f"  No connected devices reported by API.")
+    #                      continue
+
+    #                 added_count, skipped_count, error_count = 0, 0, 0
+    #                 for device_data in devices_api:
+    #                     try:
+    #                         serial = device_data.get('serial')
+    #                         hostname = device_data.get('hostname', f"Unnamed-{serial[:4]}" if serial else "Unknown")
+    #                         if not serial or serial in existing_serials or device_data.get('connected') != 'yes':
+    #                             skipped_count += 1; continue # Skip missing serial, existing, or disconnected
+
+    #                         active, alt_serial = True, None
+    #                         ha_info = device_data.get('ha', {})
+    #                         if ha_info and 'active' not in ha_info.get('state', 'active').lower():
+    #                             skipped_count += 1; continue # Skip non-active HA peers reported by Panorama
+    #                         if ha_info: alt_serial = ha_info.get('peer', {}).get('serial') or None
+
+    #                         # -- Check for Advanced Routing (if applicable) --
+    #                         # ensure field exists in device_data before checking value
+    #                         advanced_routing = False
+    #                         if 'advanced-routing' in device_data:
+    #                             if device_data['advanced-routing'] == 'yes':
+    #                                 advanced_routing = True
+
+    #                         # --- Start NEW field extraction (Identical to previous correct version) ---
+    #                         ipv6_address_val = device_data.get('ipv6-address', '')
+    #                         if str(ipv6_address_val).lower() in ['unknown', 'none']: ipv6_address_val = ''
+                            
+    #                         mac_address_val = device_data.get('mac-addr', '')
+    #                         uptime_val = device_data.get('uptime', '')
+    #                         sw_version_val = device_data.get('sw-version', '')
+    #                         app_version_val = device_data.get('app-version', '')
+    #                         av_version_val = device_data.get('av-version', '')
+    #                         wildfire_version_val = device_data.get('wildfire-version', '')
+    #                         threat_version_val = device_data.get('threat-version', '')
+    #                         url_filtering_version_val = device_data.get('url-filtering-version', '')
+                            
+    #                         device_cert_present_val = device_data.get('device-cert-present', '')
+    #                         if str(device_cert_present_val).lower() == 'none': device_cert_present_val = ''
+                                
+    #                         device_cert_expiry_date_val = device_data.get('device-cert-expiry-date', '')
+    #                         if str(device_cert_expiry_date_val).lower() == 'n/a': device_cert_expiry_date_val = ''
+    #                         # --- End NEW field extraction ---
+
+    #                         ngfw_data = {
+    #                             'hostname': hostname, 
+    #                             'serial_number': serial, 
+    #                             'ip_address': device_data.get('ip-address',''), 
+    #                             'model': device_data.get('model',''), 
+    #                             'panorama_id': panorama_obj.id, 
+    #                             'active': active, # From original HA logic
+    #                             'alt_serial': alt_serial, # From original HA logic
+    #                             'alt_ip': None, 
+    #                             'api_key': None, 
+    #                             'advanced_routing_enabled': advanced_routing,
+    #                             'last_update': None,
+    #                             # Add the new fields
+    #                             'ipv6_address': ipv6_address_val,
+    #                             'mac_address': mac_address_val,
+    #                             'uptime': uptime_val,
+    #                             'sw_version': sw_version_val,
+    #                             'app_version': app_version_val,
+    #                             'av_version': av_version_val,
+    #                             'wildfire_version': wildfire_version_val,
+    #                             'threat_version': threat_version_val,
+    #                             'url_filtering_version': url_filtering_version_val,
+    #                             'device_cert_present': device_cert_present_val,
+    #                             'device_cert_expiry_date': device_cert_expiry_date_val
+    #                         }
+
+    #                         new_ngfw = Ngfw(**ngfw_data)
+    #                         session.add(new_ngfw)
+    #                         existing_serials.add(serial)
+    #                         if alt_serial: existing_serials.add(alt_serial)
+    #                         added_count += 1
+    #                         messages.append(f"  NGFW '{hostname}' ({serial}) successfully added.")
+    #                     except Exception as processing_err:
+    #                         error_count += 1; messages.append(f"  Error processing device data (Serial: {serial or 'Unknown'}): {processing_err}"); session.rollback()
+    #                 messages.append(f"  Import complete: Added {added_count}, Skipped {skipped_count}, Errors {error_count}.")
+    #                 session.commit()
+    #     except sqlalchemy_exc.SQLAlchemyError as db_err:
+    #         session.rollback(); raise MTControllerException(f"Database error during import: {db_err}")
+    #     except Exception as e:
+    #          session.rollback(); raise MTControllerException(f"Unexpected error during import: {e}")
+    #     return messages
+
+    def import_panorama_devices(self, pan_filter=None):
+        """
+        Imports NGFW details from Panoramas. This is a GENERATOR that yields
+        status messages during its execution.
+        """
+        logging.info(f"Starting import of Panorama devices. Filter: '{pan_filter or 'All'}'")
         try:
             with self._Session() as session:
                 pan_query = session.query(Panorama)
@@ -963,22 +1429,22 @@ class MTController:
                 panorama_list = pan_query.all()
 
                 if not panorama_list:
-                    messages.append(f"Panorama '{pan_filter or 'Any'}' not found in database.")
-                    return messages
+                    yield f"Panorama '{pan_filter or 'Any'}' not found in database."
+                    return
 
                 existing_serials = {s for s, in session.query(Ngfw.serial_number).all()} | \
                                    {s for s, in session.query(Ngfw.alt_serial).filter(Ngfw.alt_serial.isnot(None)).all()}
 
                 for panorama_obj in panorama_list:
-                    messages.append(f"--- Processing Panorama: {panorama_obj.hostname} ({panorama_obj.ip_address}) ---")
+                    yield f"--- Processing Panorama: {panorama_obj.hostname} ({panorama_obj.ip_address}) ---"
                     devices_api = self._fetch_api_panorama_devices(panorama_obj)
 
                     if devices_api is None:
-                        messages.append(f"  Failed to fetch devices via API. Skipping.")
+                        yield f"  ERROR: Failed to fetch devices via API. Skipping."
                         continue
                     if not devices_api:
-                         messages.append(f"  No connected devices reported by API.")
-                         continue
+                        yield f"  INFO: No connected devices reported by API."
+                        continue
 
                     added_count, skipped_count, error_count = 0, 0, 0
                     for device_data in devices_api:
@@ -1020,7 +1486,7 @@ class MTController:
                             device_cert_expiry_date_val = device_data.get('device-cert-expiry-date', '')
                             if str(device_cert_expiry_date_val).lower() == 'n/a': device_cert_expiry_date_val = ''
                             # --- End NEW field extraction ---
-
+                            
                             ngfw_data = {
                                 'hostname': hostname, 
                                 'serial_number': serial, 
@@ -1046,147 +1512,293 @@ class MTController:
                                 'device_cert_present': device_cert_present_val,
                                 'device_cert_expiry_date': device_cert_expiry_date_val
                             }
-
                             new_ngfw = Ngfw(**ngfw_data)
                             session.add(new_ngfw)
                             existing_serials.add(serial)
-                            if alt_serial: existing_serials.add(alt_serial)
+                            if new_ngfw.alt_serial: existing_serials.add(new_ngfw.alt_serial)
                             added_count += 1
-                            messages.append(f"  NGFW '{hostname}' ({serial}) successfully added.")
-                        except Exception as processing_err:
-                            error_count += 1; messages.append(f"  Error processing device data (Serial: {serial or 'Unknown'}): {processing_err}"); session.rollback()
-                    messages.append(f"  Import complete: Added {added_count}, Skipped {skipped_count}, Errors {error_count}.")
+                            yield f"  SUCCESS: NGFW '{hostname}' ({serial}) queued for addition."
+                        except Exception as e:
+                            error_count += 1
+                            yield f"  ERROR processing device data (Serial: {serial or 'Unknown'}): {e}"
+                            session.rollback()
+                    
+                    yield f"  Import summary: Added {added_count}, Skipped {skipped_count}, Errors {error_count}."
                     session.commit()
-        except sqlalchemy_exc.SQLAlchemyError as db_err:
-            session.rollback(); raise MTControllerException(f"Database error during import: {db_err}")
+        except sqlalchemy_exc.SQLAlchemyError as e:
+            yield f"FATAL DB ERROR: {e}"
+            session.rollback()
         except Exception as e:
-             session.rollback(); raise MTControllerException(f"Unexpected error during import: {e}")
-        return messages
+            yield f"FATAL UNEXPECTED ERROR: {e}"
+            session.rollback()
 
-    def refresh_ngfws(self, ngfw_filter=None) -> list:
-        """ Refreshes basic info (VRs, Interfaces including IPv6 flag and addresses) for specified NGFWs via API. """
-        logging.info(f"Starting NGFW refresh. NGFW filter: '{ngfw_filter if ngfw_filter else 'All'}'")
-        messages = []
+    # def refresh_ngfws(self, ngfw_filter=None) -> list:
+    #     """ Refreshes basic info (VRs, Interfaces including IPv6 flag and addresses) for specified NGFWs via API. """
+    #     logging.info(f"Starting NGFW refresh. NGFW filter: '{ngfw_filter if ngfw_filter else 'All'}'")
+    #     messages = []
+    #     try:
+    #         with self._Session() as session:
+    #             ngfw_list = self._get_ngfws_by_filter(session, ngfw_filter)
+    #             if not ngfw_list:
+    #                 messages.append(f"NGFW '{ngfw_filter or 'Any'}' not found in database.")
+    #                 return messages
+
+    #             for ngfw_obj in ngfw_list:
+    #                 messages.append(f"--- Refreshing NGFW: {ngfw_obj.hostname} ({ngfw_obj.serial_number}) ---")
+    #                 refresh_time = datetime.datetime.now().isoformat(timespec='seconds')
+    #                 commit_needed = False
+    #                 system_info = self._fetch_api_system_info(ngfw_obj)
+    #                 if system_info is None:
+    #                     messages.append(f"  {ngfw_obj.hostname} not connecting - skipping refresh.")
+    #                     continue
+    #                 messages.append(f"  Successfully connected.")
+
+    #                 messages.append("  Processing Virtual Routers and Interfaces...")
+    #                 try:
+    #                     # Delete existing VRs
+    #                     existing_vr_ids = {vr_id[0] for vr_id in session.query(VirtualRouter.id).filter(VirtualRouter.ngfw_id == ngfw_obj.id).all()} # Corrected tuple access
+    #                     if existing_vr_ids:
+    #                          deleted_vr_count = session.query(VirtualRouter).filter(VirtualRouter.id.in_(existing_vr_ids)).delete(synchronize_session=False)
+    #                          messages.append(f"  Deleted {deleted_vr_count} existing VR(s) and associated data (Interfaces, IPv6 Addr, etc. via cascade).")
+    #                          session.flush()
+    #                          commit_needed = deleted_vr_count > 0
+    #                     else:
+    #                          messages.append("  No existing VRs found for this NGFW.")
+
+    #                     # Add new VRs
+    #                     vr_map = {} # Maps vr_name -> vr_object
+    #                     vr_names_api = self._fetch_api_virtual_routes(ngfw_obj)
+    #                     if vr_names_api is None: messages.append(f"  Failed to fetch VRs via API. Aborting interface processing.")
+    #                     elif not vr_names_api: messages.append(f"  No VRs reported by API.")
+    #                     else:
+    #                         messages.append(f"  Found {len(vr_names_api)} VRs via API. Adding them...")
+    #                         for vr_name in vr_names_api:
+    #                             new_vr = VirtualRouter(name=vr_name, ngfw_id=ngfw_obj.id)
+    #                             session.add(new_vr)
+    #                             vr_map[vr_name] = new_vr # Store object before flush
+    #                         session.flush() # Assign IDs
+    #                         messages.append(f"  Added {len(vr_map)} new VR(s).")
+    #                         commit_needed = True
+
+    #                         # Add new Interfaces and their IPv6 addresses
+    #                         interfaces_api = self._fetch_api_interfaces(ngfw_obj)
+    #                         if interfaces_api is None: messages.append("  Failed to fetch Interfaces via API.")
+    #                         elif not interfaces_api: messages.append(f"  No interfaces reported by API.")
+    #                         else:
+    #                             messages.append(f"  Found {len(interfaces_api)} Interfaces via API. Processing...")
+    #                             added_if_count, skipped_if_count, added_ipv6_count = 0, 0, 0
+    #                             # Temporary lists to hold objects before adding to session
+    #                             new_interfaces_to_add = []
+    #                             ipv6_addresses_to_add = []
+
+    #                             for if_data in interfaces_api:
+    #                                 vr_name = if_data.get('virtual_router')
+    #                                 if vr_name in vr_map:
+    #                                     vr_obj = vr_map[vr_name] # Get VR object (now has ID)
+
+    #                                     # Determine IPv6 status AND get the list from API data
+    #                                     ipv6_list = if_data.get('ipv6_addresses', [])
+    #                                     has_ipv6 = bool(ipv6_list) # True if list exists and is not empty
+
+    #                                     # Create Interface object, setting the flag
+    #                                     new_if = Interface(
+    #                                         name=if_data.get('name', ''),
+    #                                         tag=if_data.get('tag', ''),
+    #                                         vsys=if_data.get('vsys', ''),
+    #                                         zone=if_data.get('zone', ''),
+    #                                         ip=if_data.get('ip', ''),
+    #                                         virtual_router_id=vr_obj.id, # Use VR ID
+    #                                         ipv6_enabled=has_ipv6 # <<< SET BOOLEAN FLAG HERE >>>
+    #                                     )
+    #                                     new_interfaces_to_add.append(new_if)
+    #                                     added_if_count += 1
+
+    #                                     # Create InterfaceIPv6Address objects for storage
+    #                                     for ipv6_addr in ipv6_list:
+    #                                         new_ipv6 = InterfaceIPv6Address(
+    #                                             address=ipv6_addr,
+    #                                             interface=new_if # Link to parent Interface object
+    #                                         )
+    #                                         ipv6_addresses_to_add.append(new_ipv6)
+    #                                         added_ipv6_count += 1
+    #                                 else:
+    #                                     skipped_if_count += 1
+
+    #                             # Add all new interfaces and their associated IPv6 addresses to the session
+    #                             if new_interfaces_to_add:
+    #                                 session.add_all(new_interfaces_to_add)
+    #                                 session.add_all(ipv6_addresses_to_add)
+    #                                 commit_needed = True # Mark changes were made
+
+    #                             messages.append(f"  Processed {added_if_count} Interface(s) and {added_ipv6_count} IPv6 Address(es). Skipped {skipped_if_count}.")
+
+    #                 # Exception handling for VR/Interface processing
+    #                 except sqlalchemy_exc.SQLAlchemyError as db_op_err:
+    #                      messages.append(f"  DB error during VR/Interface processing: {db_op_err}. Rolling back changes for this NGFW.")
+    #                      session.rollback(); commit_needed = False; continue
+    #                 except Exception as proc_err:
+    #                      messages.append(f"  Unexpected error during VR/Interface processing: {proc_err}. Rolling back.")
+    #                      session.rollback(); commit_needed = False; continue
+
+    #                 # Update timestamp and commit logic
+    #                 ngfw_obj.last_update = refresh_time
+    #                 if commit_needed:
+    #                      try: session.commit(); messages.append(f"  Refresh commit successful.")
+    #                      except sqlalchemy_exc.SQLAlchemyError as commit_err: messages.append(f"  DB commit error: {commit_err}. Rolled back."); session.rollback()
+    #                 else: # Only update timestamp if no other changes were committed
+    #                      try: session.merge(ngfw_obj); session.commit(); messages.append(f"  Refresh timestamp updated (no other data changes committed).")
+    #                      except sqlalchemy_exc.SQLAlchemyError as commit_err: messages.append(f"  DB commit error updating timestamp: {commit_err}."); session.rollback()
+
+    #     except sqlalchemy_exc.SQLAlchemyError as db_err:
+    #         # Catch errors during initial NGFW query or session handling
+    #         raise MTControllerException(f"Database error during refresh_ngfws setup: {db_err}")
+    #     except Exception as e:
+    #          # Catch other unexpected errors like initialization issues
+    #          raise MTControllerException(f"Unexpected error during refresh_ngfws: {e}")
+    #     return messages
+
+    def refresh_ngfws(self, ngfw_filter=None):
+        """
+        Refreshes NGFW data. This is a GENERATOR that yields status messages.
+        """
+        logging.info(f"Starting NGFW refresh. Filter: '{ngfw_filter or 'All'}'")
         try:
             with self._Session() as session:
                 ngfw_list = self._get_ngfws_by_filter(session, ngfw_filter)
                 if not ngfw_list:
-                    messages.append(f"NGFW '{ngfw_filter or 'Any'}' not found in database.")
-                    return messages
+                    yield f"No NGFWs found matching '{ngfw_filter or 'Any'}'."
+                    return
 
                 for ngfw_obj in ngfw_list:
-                    messages.append(f"--- Refreshing NGFW: {ngfw_obj.hostname} ({ngfw_obj.serial_number}) ---")
-                    refresh_time = datetime.datetime.now().isoformat(timespec='seconds')
+                    yield f"--- Refreshing NGFW: {ngfw_obj.hostname} ({ngfw_obj.serial_number}) ---"
                     commit_needed = False
+                    
                     system_info = self._fetch_api_system_info(ngfw_obj)
                     if system_info is None:
-                        messages.append(f"  {ngfw_obj.hostname} not connecting - skipping refresh.")
+                        yield f"  ERROR: Could not connect. Skipping refresh."
                         continue
-                    messages.append(f"  Successfully connected.")
+                    yield "  SUCCESS: Connected to device."
+                    
+                    # ---------------- ARE Bug Fix START ----------------
 
-                    messages.append("  Processing Virtual Routers and Interfaces...")
+                    yield "  Checking for Advanced Routing Engine status..."
+                    # The 'system_info' dict from the API contains the definitive 'advanced-routing' key
+                    are_status_from_api_raw = system_info.get('advanced-routing', 'off')
+                    are_enabled_from_api = str(are_status_from_api_raw).lower() == 'on'
+
+                    # Compare with the status stored in the database and update if necessary
+                    if are_enabled_from_api != ngfw_obj.advanced_routing_enabled:
+                        yield (f"    Status mismatch found (DB: {ngfw_obj.advanced_routing_enabled}, "
+                               f"Device: {are_enabled_from_api}). Updating database.")
+                        ngfw_obj.advanced_routing_enabled = are_enabled_from_api
+                        commit_needed = True  # Mark that a DB change needs to be committed
+                    else:
+                        yield f"    Status confirmed: Advanced Routing is {'enabled' if are_enabled_from_api else 'disabled'}."
+
+                    # ---------------- ARE Bug Fix END ----------------
+
                     try:
-                        # Delete existing VRs
-                        existing_vr_ids = {vr_id[0] for vr_id in session.query(VirtualRouter.id).filter(VirtualRouter.ngfw_id == ngfw_obj.id).all()} # Corrected tuple access
-                        if existing_vr_ids:
-                             deleted_vr_count = session.query(VirtualRouter).filter(VirtualRouter.id.in_(existing_vr_ids)).delete(synchronize_session=False)
-                             messages.append(f"  Deleted {deleted_vr_count} existing VR(s) and associated data (Interfaces, IPv6 Addr, etc. via cascade).")
-                             session.flush()
-                             commit_needed = deleted_vr_count > 0
+
+                        # --- START: MODIFIED DELETION LOGIC ---
+                        yield "  Deleting existing virtual routers and related data..."
+                        # Find the VirtualRouter objects to delete
+                        vrs_to_delete = session.query(VirtualRouter).filter(VirtualRouter.ngfw_id == ngfw_obj.id).all()
+                        
+                        if vrs_to_delete:
+                            deleted_vr_count = len(vrs_to_delete)
+                            # Delete each object individually to trigger the ORM cascade
+                            for vr in vrs_to_delete:
+                                session.delete(vr)
+                            
+                            yield f"  Deleted {deleted_vr_count} existing VR(s) and associated data."
+                            session.flush() # Process deletes before adds
+                            commit_needed = True
                         else:
-                             messages.append("  No existing VRs found for this NGFW.")
+                            yield "  No existing VRs found to delete."
+                        # --- END: MODIFIED DELETION LOGIC ---
 
                         # Add new VRs
                         vr_map = {} # Maps vr_name -> vr_object
+                        yield "  Fetching new virtual router configuration..."
                         vr_names_api = self._fetch_api_virtual_routes(ngfw_obj)
-                        if vr_names_api is None: messages.append(f"  Failed to fetch VRs via API. Aborting interface processing.")
-                        elif not vr_names_api: messages.append(f"  No VRs reported by API.")
+                        if vr_names_api is None:
+                            yield "  ERROR: Failed to fetch VRs via API. Aborting interface processing."
+                        elif not vr_names_api:
+                            yield "  INFO: No VRs reported by API."
                         else:
-                            messages.append(f"  Found {len(vr_names_api)} VRs via API. Adding them...")
+                            yield f"  Found {len(vr_names_api)} VRs via API. Adding them..."
                             for vr_name in vr_names_api:
                                 new_vr = VirtualRouter(name=vr_name, ngfw_id=ngfw_obj.id)
                                 session.add(new_vr)
-                                vr_map[vr_name] = new_vr # Store object before flush
-                            session.flush() # Assign IDs
-                            messages.append(f"  Added {len(vr_map)} new VR(s).")
+                                vr_map[vr_name] = new_vr
+                            session.flush() # Assign IDs to new VRs
+                            yield f"  Added {len(vr_map)} new VR(s)."
                             commit_needed = True
 
                             # Add new Interfaces and their IPv6 addresses
+                            yield "  Fetching new interface configuration..."
                             interfaces_api = self._fetch_api_interfaces(ngfw_obj)
-                            if interfaces_api is None: messages.append("  Failed to fetch Interfaces via API.")
-                            elif not interfaces_api: messages.append(f"  No interfaces reported by API.")
+                            if interfaces_api is None:
+                                yield "  ERROR: Failed to fetch Interfaces via API."
+                            elif not interfaces_api:
+                                yield "  INFO: No interfaces reported by API."
                             else:
-                                messages.append(f"  Found {len(interfaces_api)} Interfaces via API. Processing...")
+                                yield f"  Found {len(interfaces_api)} Interfaces via API. Processing..."
                                 added_if_count, skipped_if_count, added_ipv6_count = 0, 0, 0
-                                # Temporary lists to hold objects before adding to session
                                 new_interfaces_to_add = []
                                 ipv6_addresses_to_add = []
 
                                 for if_data in interfaces_api:
                                     vr_name = if_data.get('virtual_router')
                                     if vr_name in vr_map:
-                                        vr_obj = vr_map[vr_name] # Get VR object (now has ID)
-
-                                        # Determine IPv6 status AND get the list from API data
+                                        vr_obj = vr_map[vr_name]
                                         ipv6_list = if_data.get('ipv6_addresses', [])
-                                        has_ipv6 = bool(ipv6_list) # True if list exists and is not empty
+                                        has_ipv6 = bool(ipv6_list)
 
-                                        # Create Interface object, setting the flag
                                         new_if = Interface(
-                                            name=if_data.get('name', ''),
-                                            tag=if_data.get('tag', ''),
-                                            vsys=if_data.get('vsys', ''),
-                                            zone=if_data.get('zone', ''),
-                                            ip=if_data.get('ip', ''),
-                                            virtual_router_id=vr_obj.id, # Use VR ID
-                                            ipv6_enabled=has_ipv6 # <<< SET BOOLEAN FLAG HERE >>>
+                                            name=if_data.get('name', ''), tag=if_data.get('tag', ''),
+                                            vsys=if_data.get('vsys', ''), zone=if_data.get('zone', ''),
+                                            ip=if_data.get('ip', ''), virtual_router_id=vr_obj.id,
+                                            ipv6_enabled=has_ipv6
                                         )
                                         new_interfaces_to_add.append(new_if)
                                         added_if_count += 1
 
-                                        # Create InterfaceIPv6Address objects for storage
                                         for ipv6_addr in ipv6_list:
-                                            new_ipv6 = InterfaceIPv6Address(
-                                                address=ipv6_addr,
-                                                interface=new_if # Link to parent Interface object
-                                            )
-                                            ipv6_addresses_to_add.append(new_ipv6)
+                                            ipv6_addresses_to_add.append(InterfaceIPv6Address(address=ipv6_addr, interface=new_if))
                                             added_ipv6_count += 1
                                     else:
                                         skipped_if_count += 1
 
-                                # Add all new interfaces and their associated IPv6 addresses to the session
                                 if new_interfaces_to_add:
                                     session.add_all(new_interfaces_to_add)
                                     session.add_all(ipv6_addresses_to_add)
-                                    commit_needed = True # Mark changes were made
+                                    commit_needed = True
+                                
+                                yield f"  Processed {added_if_count} Interface(s) and {added_ipv6_count} IPv6 Address(es). Skipped {skipped_if_count}."
 
-                                messages.append(f"  Processed {added_if_count} Interface(s) and {added_ipv6_count} IPv6 Address(es). Skipped {skipped_if_count}.")
+                        # Update timestamp and commit
+                        ngfw_obj.last_update = datetime.datetime.now().isoformat(timespec='seconds')
+                        if commit_needed:
+                            yield "  Committing changes to database..."
+                            session.commit()
+                            yield "  Refresh successful."
+                        else:
+                            session.merge(ngfw_obj)
+                            session.commit()
+                            yield "  Refresh complete (timestamp updated, no other data changes)."
 
-                    # Exception handling for VR/Interface processing
                     except sqlalchemy_exc.SQLAlchemyError as db_op_err:
-                         messages.append(f"  DB error during VR/Interface processing: {db_op_err}. Rolling back changes for this NGFW.")
-                         session.rollback(); commit_needed = False; continue
+                        yield f"  DB ERROR during processing: {db_op_err}. Rolling back changes for this NGFW."
+                        session.rollback()
+                        continue
                     except Exception as proc_err:
-                         messages.append(f"  Unexpected error during VR/Interface processing: {proc_err}. Rolling back.")
-                         session.rollback(); commit_needed = False; continue
+                        yield f"  UNEXPECTED ERROR during processing: {proc_err}. Rolling back."
+                        session.rollback()
+                        continue
 
-                    # Update timestamp and commit logic
-                    ngfw_obj.last_update = refresh_time
-                    if commit_needed:
-                         try: session.commit(); messages.append(f"  Refresh commit successful.")
-                         except sqlalchemy_exc.SQLAlchemyError as commit_err: messages.append(f"  DB commit error: {commit_err}. Rolled back."); session.rollback()
-                    else: # Only update timestamp if no other changes were committed
-                         try: session.merge(ngfw_obj); session.commit(); messages.append(f"  Refresh timestamp updated (no other data changes committed).")
-                         except sqlalchemy_exc.SQLAlchemyError as commit_err: messages.append(f"  DB commit error updating timestamp: {commit_err}."); session.rollback()
-
-        except sqlalchemy_exc.SQLAlchemyError as db_err:
-            # Catch errors during initial NGFW query or session handling
-            raise MTControllerException(f"Database error during refresh_ngfws setup: {db_err}")
         except Exception as e:
-             # Catch other unexpected errors like initialization issues
-             raise MTControllerException(f"Unexpected error during refresh_ngfws: {e}")
-        return messages
+            yield f"FATAL ERROR during refresh: {e}"
 
     # --- Helpers for creating DB objects (Internal) ---
     def _create_route_object(self, vr_id, afi, data):
@@ -1642,6 +2254,78 @@ class MTController:
         except sqlalchemy_exc.SQLAlchemyError as db_err: raise MTControllerException(f"DB error getting NGFWs: {db_err}")
         except Exception as e: raise MTControllerException(f"Unexpected error getting NGFWs: {e}")
         return response
+
+    # --- NEW METHOD ---
+    def get_ngfw_details(self, serial: str) -> dict | None:
+        """
+        Retrieves the full, formatted details for a single NGFW by its serial number.
+
+        Args:
+            serial (str): The serial number of the NGFW to retrieve.
+
+        Returns:
+            dict | None: A dictionary containing the formatted NGFW details if found,
+                         otherwise None.
+        
+        Raises:
+            MTControllerException: If a database error occurs.
+        """
+        logging.debug(f"Fetching details for NGFW with serial: {serial}")
+        try:
+            with self._Session() as session:
+                # Query for the NGFW, eagerly loading the related Panorama object
+                # to ensure its details (like hostname) are available for the formatter.
+                ngfw_obj = session.query(Ngfw).options(
+                    joinedload(Ngfw.panorama)
+                ).filter(
+                    Ngfw.serial_number == serial
+                ).first()
+
+                if not ngfw_obj:
+                    logging.warning(f"No NGFW found in database with serial: {serial}")
+                    return None
+                
+                # Use the existing helper method to format the data for the UI
+                return self._format_ngfw_result(ngfw_obj)
+
+        except sqlalchemy_exc.SQLAlchemyError as e:
+            logging.error(f"Database error fetching details for NGFW {serial}: {e}", exc_info=True)
+            raise MTControllerException(f"Database error fetching details for NGFW {serial}: {e}")
+
+    def get_panorama_details(self, serial: str) -> dict | None:
+        """
+        Retrieves the full, formatted details for a single Panorama by its serial number.
+
+        Args:
+            serial (str): The serial number of the Panorama to retrieve.
+
+        Returns:
+            dict | None: A dictionary containing the formatted Panorama details if found,
+                            otherwise None.
+        
+        Raises:
+            MTControllerException: If a database error occurs.
+        """
+        logging.debug(f"Fetching details for Panorama with serial: {serial}")
+        try:
+            with self._Session() as session:
+                # Query for the Panorama, eagerly loading the ngfws relationship for the count
+                pan_obj = session.query(Panorama).options(
+                    joinedload(Panorama.ngfws)
+                ).filter(
+                    Panorama.serial_number == serial
+                ).first()
+
+                if not pan_obj:
+                    logging.warning(f"No Panorama found in database with serial: {serial}")
+                    return None
+                
+                # Use the existing helper method to format the data for the UI
+                return self._format_panorama_result(pan_obj)
+
+        except sqlalchemy_exc.SQLAlchemyError as e:
+            logging.error(f"Database error fetching details for Panorama {serial}: {e}", exc_info=True)
+            raise MTControllerException(f"Database error fetching details for Panorama {serial}: {e}")
 
     def get_neighbors(self, ngfw=None, on_demand=False) -> dict:
         """ Retrieves LLDP neighbor information. """
