@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}MT-UI{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/main-styles.css') }}">
+    
+    <script>
+        // This script runs immediately to apply the theme from localStorage
+        // and prevent a "flash of unstyled content" (FOUC).
+        (function() {
+            const theme = localStorage.getItem('theme');
+            if (theme === 'dark') {
+                document.documentElement.classList.add('dark-mode');
+            }
+        })();
+    </script>
+
+    {% block head_content %}{# For page-specific CSS #}{% endblock %}
+</head>
+<body>
+    <nav class="top-nav">
+        <div class="nav-container">
+            <a href="/" class="nav-brand">MT-UI - {% block pagename %}Mapper{% endblock %}</a>
+            <div class="nav-links">
+                <a href="/" class="{% if request.path == '/' %}active{% endif %}">Mapper</a>
+                <a href="/explorer" class="{% if request.path == '/explorer' %}active{% endif %}">Data Explorer</a>
+                <a href="/devices" class="{% if request.path == '/devices' %}active{% endif %}">Device Management</a>
+                
+                <label class="theme-switch" for="theme-checkbox" title="Toggle theme">
+                    <input type="checkbox" id="theme-checkbox">
+                    <span class="slider round"></span>
+                </label>
+            </div>
+        </div>
+    </nav>
+
+    <div id="page-content">
+        {% block content %}{# Main content for each page will go here #}{% endblock %}
+    </div>
+
+    {% block scripts %}{# For page-specific JavaScript #}{% endblock %}
+    <script src="{{ url_for('static', filename='scripts/global.js') }}"></script>
+</body>
+</html>

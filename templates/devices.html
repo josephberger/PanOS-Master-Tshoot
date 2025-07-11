@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Device Management - MT-UI{% endblock %}
+{% block pagename %}Device Management{% endblock %}
+
+{% block head_content %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/device-manager-styles.css') }}">
+{% endblock %}
+
+{% block content %}
+<div id="app-container">
+    <div class="controls">
+        <div id="controls-header">
+            <strong><span id="menu-toggle-icon">«</span> Menu</strong>
+        </div>
+        <div id="controls-body">
+            <label>Device</label>
+            <button id="importBtn" class="button-secondary">Import from Panoramas</button>
+            <button id="refreshBtn" class="button-secondary">Refresh All NGFWs</button>
+            <button id="updateHaBtn" class="button-secondary">Update HA Status (All)</button>
+
+            <hr class="section-divider">
+
+            <label>Data</label>
+            <button id="updateRoutesBtn" class="button-secondary">Update All Routes</button>
+            <button id="updateArpsBtn" class="button-secondary">Update All ARPs</button>
+            <button id="updateBgpBtn" class="button-secondary">Update All BGP Peers</button>
+            <button id="updateLldpBtn" class="button-secondary">Update All LLDP</button>
+        </div>
+    </div>
+
+    <main class="management-main-content">
+        <div class="management-grid">
+            <div class="forms-column">
+                <h2>Add New Device</h2>
+                <div class="form-container">
+                    <form id="add-pan-form">
+                        <h5>Add Panorama</h5>
+                        <input type="text" id="panorama-host" placeholder="IP or Hostname" required>
+                        <input type="text" id="panorama-user" placeholder="Username" required>
+                        <input type="password" id="panorama-pass" placeholder="Password" required>
+                        <button type="submit" class="button-primary">Add Panorama</button>
+                    </form>
+                    <hr class="section-divider">
+                    <form id="add-ngfw-form">
+                        <h5>Add Standalone NGFW</h5>
+                        <input type="text" id="ngfw-host" placeholder="IP or Hostname" required>
+                        <input type="text" id="ngfw-user" placeholder="Username" required>
+                        <input type="password" id="ngfw-pass" placeholder="Password" required>
+                        <button type="submit" class="button-primary">Add NGFW</button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="inventory-column">
+                <h2>Device Inventory</h2>
+                <div id="device-inventory-list">
+                    <p>Loading inventory...</p>
+                </div>
+            </div>
+        </div>
+    </main>
+</div>
+
+<div id="task-log-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Task Log</h3>
+            <button id="close-log-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+            <pre id="log-output"></pre>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='scripts/device-manager.js') }}"></script>
+{% endblock %}

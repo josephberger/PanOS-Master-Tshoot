@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Data Explorer - MT-UI{% endblock %}
+{% block pagename %}Data Explorer{% endblock %}
+
+{% block head_content %}
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/explorer-styles.css') }}">
+{% endblock %}
+
+{% block content %}
+<div id="app-container">
+    <div class="controls">
+        <div id="controls-header">
+            <strong><span id="menu-toggle-icon">«</span> Menu</strong>
+        </div>
+        <div id="controls-body">
+            <div id="explorer-controls">
+                <h3>FIB Lookup</h3>
+                <form id="fib-lookup-form">
+                    <label for="fib-ip-input">IP Address</label>
+                    <input type="text" id="fib-ip-input" name="ip" placeholder="e.g., 8.8.8.8" required>
+                    <button type="submit" class="button-primary">Run Lookup</button>
+                </form>
+                <hr class="section-divider">
+                
+                <h3>Data Table Query</h3>
+                <form id="explorer-form">
+                    <label for="ngfw-select">NGFW</label>
+                    <select id="ngfw-select" name="ngfw">
+                        <option value="">All NGFWs</option>
+                    </select>
+
+                    <label for="vr-select">Virtual Router</label>
+                    <select id="vr-select" name="vr">
+                        <option value="">All VRs</option>
+                    </select>
+
+                    <label for="data-type-select">Data Type</label>
+                    <select id="data-type-select" name="type" required>
+                        <option value="" disabled selected>Select data type...</option>
+                        <option value="routes">Routes</option>
+                        <option value="fibs">FIBs</option>
+                        <option value="arps">ARPs</option>
+                        <option value="bgp-peers">BGP Peers</option>
+                        <option value="lldp-neighbors">LLDP Neighbors</option>
+                        <option value="interfaces">Interfaces (All)</option>
+                        <option value="interfacesv6">Interfaces (IPv6 Only)</option>
+                    </select>
+
+                    <div id="contextual-filters-container">
+                        <div id="filter-for-dst" class="context-filter" style="display: none;">
+                            <label for="filter-input-dst">Destination</label>
+                            <input type="text" id="filter-input-dst" name="destination" placeholder="e.g., 10.0.0.0/8">
+                        </div>
+                        <div id="filter-for-flag" class="context-filter" style="display: none;">
+                            <label for="filter-input-flag">Flags</label>
+                            <input type="text" id="filter-input-flag" name="flags" placeholder="e.g., A,C">
+                        </div>
+                         <div id="filter-for-afi" class="context-filter" style="display: none;">
+                            <label for="filter-select-afi">Address Family</label>
+                            <select id="filter-select-afi" name="afi">
+                                <option value="ipv4" selected>IPv4</option>
+                                <option value="ipv6">IPv6</option>
+                            </select>
+                        </div>
+                        <div id="filter-for-int" class="context-filter" style="display: none;">
+                            <label for="filter-input-int">Interface</label>
+                            <input type="text" id="filter-input-int" name="interface" placeholder="e.g., ethernet1/1">
+                        </div>
+                    </div>
+                    
+                    <label for="on-demand-checkbox">
+                        <input type="checkbox" id="on-demand-checkbox" name="on_demand">
+                        Fetch live data (On-Demand)
+                    </label>
+
+                    <button type="submit" class="button-primary">Fetch Table Data</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <main class="explorer-main-content">
+        <div id="filter-controls" style="display: none;">
+            <input type="text" id="filter-input" placeholder="Filter results on this page...">
+        </div>
+
+        <div id="results-header" style="display: none;">
+            <button id="export-csv-btn" class="button-secondary" title="Export to CSV">&#x2913;</button>
+        </div>
+        <div id="results-container">
+            <p class="placeholder-text">Select filters and run a query to see results.</p>
+        </div>
+        <div id="message-container"></div>
+    </main>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='scripts/explorer.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+
+{% block title %}MT-Mapper Visualization{% endblock %}
+{% block pagename %}Mapper{% endblock %}
+
+{% block head_content %}
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/mapper-styles.css') }}">
+{% endblock %}
+
+{% block content %}
+<div id="app-container">
+    <div class="controls">
+        <div id="controls-header">
+            <strong><span id="menu-toggle-icon">«</span> Menu</strong>
+        </div>
+        <div id="controls-body">
+            <div id="main-controls">
+                <button id="loadAllBtn" class="button-primary">Load All Maps</button>
+                <label for="vrSelector">Single Map View</label>
+                <select id="vrSelector"></select>
+                
+                <hr class="section-divider">
+                <label>FIB Trace on Map</label>
+                <form id="map-trace-form">
+                    <input type="text" id="map-src-ip-input" name="src_ip" placeholder="Source IP (e.g., 192.168.1.5)" required>
+                    <input type="text" id="map-dst-ip-input" name="dst_ip" placeholder="Destination IP (e.g., 8.8.8.8)" required>
+                    <button type="submit" class="button-secondary">Trace Path</button>
+                </form>
+                
+                <label for="searchInput">Search Current View</label>
+                <input type="text" id="searchInput" placeholder="e.g., LAN, 172.16...">
+                <div class="button-group">
+                    <button id="resetViewBtn" class="button-secondary">Reset View</button>
+                    <button id="exportSvgBtn" class="button-secondary">Export to SVG</button>
+                </div>
+
+                </div>
+            <div id="inspector-panel" style="display: none;">
+                <div class="modal-header">
+                    <h4 id="inspector-title"></h4>
+                    <button id="inspector-close-btn">&times;</button>
+                </div>
+                <div id="inspector-content"></div>
+            </div>
+        </div>
+    </div>
+    <div id="visualization"></div>
+</div>
+
+<div id="task-log-modal" class="modal-backdrop" style="display: none;">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>Task Log</h3>
+            <button id="close-log-btn">&times;</button>
+        </div>
+        <div class="modal-body">
+            <pre id="log-output"></pre>
+        </div>
+    </div>
+</div>
+<div class="tooltip"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='scripts/mapper-script.js') }}"></script>
+{% endblock %}
