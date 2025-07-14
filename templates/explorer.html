@@ -97,5 +97,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='scripts/global.js') }}"></script> {# NEW LINE #}
 <script src="{{ url_for('static', filename='scripts/explorer.js') }}"></script>
 {% endblock %}

@@ -7,8 +7,11 @@ PanOS Master Tshooter (MT) was designed for quick ad-hoc tshooting information f
 **MT-UI**
 - Added a web-based user interface (MT-UI) for easier access to the MT CLI commands.
 - The MT-UI is a Flask-based web application that allows you to run MT CLI commands through a web interface.
-- To use the MT-UI, run the script with the `--ui` option:
+- Includes a logical Zone Map and a LLDP Neighbor Map for visualizing network topology.
+- To use the MT-UI, run the mtu-ui.py script:
   ```bash
+  # Build the initial database using mt-cli.py
+  python mt-cli.py build-db
   python mt-ui.py
   ```
 Then Navigate to `http://localhost:5001` in your web browser.

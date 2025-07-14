@@ -25,6 +25,7 @@ import datetime
 import time
 import logging
 import copy
+from collections import defaultdict # <<< ADD THIS IMPORT
 
 from sqlalchemy import create_engine, select, exc as sqlalchemy_exc
 from sqlalchemy.orm import sessionmaker, joinedload, Session
@@ -481,6 +482,177 @@ class MTController:
                 filtered_maps[key] = new_map_data
 
         return filtered_maps if not map_key else filtered_maps.get(map_key)
+    
+    # --- START: New Private Helper Method for LLDP Map Generation ---
+    def _generate_ui_lldp_map_for_ngfw(self, ngfw_obj: Ngfw, session: Session) -> dict:
+        """
+        Helper function to generate the D3.js JSON structure for a single NGFW's
+        LLDP neighbors, grouped by remote_hostname.
+
+        Args:
+            ngfw_obj (Ngfw): The NGFW database object for which to generate the map.
+            session (Session): The active SQLAlchemy session.
+
+        Returns:
+            dict: A dictionary containing the NGFW's hostname and a list of
+                  grouped unique neighbor nodes, or an empty list if no neighbors.
+        """
+        logging.debug(f"Generating LLDP map data for NGFW: {ngfw_obj.hostname}")
+
+        # Query all LLDP neighbors for this NGFW
+        lldp_entries = session.query(Neighbor).filter_by(ngfw_id=ngfw_obj.id).all() #
+
+        # Use defaultdict to group connections by remote_hostname
+        temp_grouped = defaultdict(list)
+        for entry in lldp_entries:
+            temp_grouped[entry.remote_hostname].append({ #
+                'local_interface': entry.local_interface, #
+                'remote_interface_id': entry.remote_interface_id, #
+                'remote_interface_description': entry.remote_interface_description, #
+                'remote_hostname': entry.remote_hostname #
+            })
+
+        # Convert defaultdict to the final list of unique neighbor nodes
+        unique_neighbor_nodes = []
+        for hostname, connections in temp_grouped.items():
+            unique_neighbor_nodes.append({
+                'remote_hostname': hostname,
+                'connections': connections
+            })
+        
+        # Sort unique neighbors by hostname for consistent rendering
+        unique_neighbor_nodes.sort(key=lambda x: x['remote_hostname'])
+
+        return {
+            "ngfw_hostname": ngfw_obj.hostname,
+            "unique_neighbors": unique_neighbor_nodes
+        }
+
+    # Public method for single NGFW LLDP map
+    def get_lldp_map_for_ui(self, ngfw_hostname: str) -> dict | None:
+        """
+        Retrieves the grouped LLDP neighbor data for a specific NGFW,
+        formatted for UI visualization.
+        """
+        logging.info(f"API call to get_lldp_map_for_ui for NGFW: '{ngfw_hostname}'")
+        try:
+            with self._Session() as session:
+                ngfw_obj = session.query(Ngfw).filter_by(hostname=ngfw_hostname).first() 
+                if not ngfw_obj:
+                    logging.warning(f"NGFW '{ngfw_hostname}' not found for LLDP map generation.")
+                    return None
+                
+                return self._generate_ui_lldp_map_for_ngfw(ngfw_obj, session)
+
+        except sqlalchemy_exc.SQLAlchemyError as e:
+            logging.error(f"Database error fetching LLDP map for NGFW '{ngfw_hostname}': {e}", exc_info=True)
+            raise MTControllerException(f"Database error fetching LLDP map for NGFW '{ngfw_hostname}': {e}")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred in get_lldp_map_for_ui for NGFW '{ngfw_hostname}': {e}", exc_info=True)
+            raise MTControllerException(f"An unexpected error occurred for NGFW '{ngfw_hostname}': {e}")
+
+    # --- START: Modified Private Helper for Global LLDP Map Generation ---
+    def _generate_global_lldp_graph_data(self, session: Session) -> dict:
+        """
+        Generates a consolidated graph data structure (nodes and links)
+        for all NGFWs and their unique LLDP neighbors, suitable for
+        a force-directed layout.
+        
+        Excludes NGFWs that do not have any LLDP neighbors.
+        Adds a 'label' field for truncated display names on remote devices,
+        truncating to MAX_DISPLAY_LABEL_LENGTH with '..'.
+        """
+        logging.debug("Generating global LLDP graph data for UI.")
+        
+        nodes = {}  # {id: {id, name, label, type, ...}}
+        links = []  # [{source, target, local_interface, remote_interface_id, ...}]
+
+        ngfw_nodes_added = set() 
+        remote_hostname_to_node_id = {} 
+        next_node_id = 0 
+
+        # Define maximum label length constant for display
+        MAX_DISPLAY_LABEL_LENGTH = 12 
+
+        all_lldp_entries = session.query(Neighbor).options(joinedload(Neighbor.ngfw)).filter(Neighbor.ngfw.has()).all() 
+
+        if not all_lldp_entries:
+            logging.info("No LLDP neighbor entries found in database for global map.")
+            return {"nodes": [], "links": []}
+
+        for entry in all_lldp_entries:
+            ngfw_obj = entry.ngfw 
+            if not ngfw_obj:
+                logging.warning(f"Skipping LLDP entry (ID: {entry.id}) due to missing associated NGFW.")
+                continue
+
+            # Ensure the NGFW is added as a node ONLY ONCE if it has neighbors
+            if ngfw_obj.hostname not in ngfw_nodes_added:
+                node_id = f"ngfw-{ngfw_obj.serial_number}" 
+                nodes[node_id] = {
+                    "id": node_id,
+                    "name": ngfw_obj.hostname, # Full hostname for consistency and search
+                    "label": ngfw_obj.hostname, # NGFWs display their full hostname (no truncation)
+                    "serial_number": ngfw_obj.serial_number,
+                    "type": "ngfw",
+                    "locked": False, # <<< ADDED: Initial locked state
+                }
+                ngfw_nodes_added.add(ngfw_obj.hostname) 
+
+            ngfw_source_id = nodes[f"ngfw-{ngfw_obj.serial_number}"]["id"]
+
+            remote_hostname = entry.remote_hostname
+            remote_node_id = remote_hostname_to_node_id.get(remote_hostname)
+
+            if not remote_node_id:
+                remote_node_id = f"remote-{next_node_id}" 
+                remote_hostname_to_node_id[remote_hostname] = remote_node_id
+                
+                # Truncate label to maximum characters, add ".." if longer
+                if len(remote_hostname) > MAX_DISPLAY_LABEL_LENGTH:
+                    display_label = remote_hostname[:MAX_DISPLAY_LABEL_LENGTH - 2] + ".."
+                else:
+                    display_label = remote_hostname
+                
+                nodes[remote_node_id] = {
+                    "id": remote_node_id,
+                    "name": remote_hostname,  # Full hostname for tooltips and search
+                    "label": display_label,     # Truncated label for display on the box
+                    "type": "remote_device",
+                }
+                next_node_id += 1 
+            
+            links.append({
+                "source": ngfw_source_id, 
+                "target": remote_node_id, 
+                "local_interface": entry.local_interface,
+                "remote_interface_id": entry.remote_interface_id,
+                "remote_interface_description": entry.remote_interface_description,
+                "ngfw_hostname": ngfw_obj.hostname, 
+            })
+
+        final_nodes_list = list(nodes.values())
+        
+        return {
+            "nodes": final_nodes_list,
+            "links": links
+        }
+
+    def get_global_lldp_map_for_ui(self) -> dict:
+        """
+        Retrieves consolidated LLDP neighbor data from all NGFWs,
+        formatted as a graph (nodes and links) for a global map visualization.
+        """
+        logging.info("API call to get_global_lldp_map_for_ui (all NGFWs).")
+        try:
+            with self._Session() as session:
+                return self._generate_global_lldp_graph_data(session)
+        except sqlalchemy_exc.SQLAlchemyError as e:
+            logging.error(f"Database error fetching global LLDP map data: {e}", exc_info=True)
+            raise MTControllerException(f"Database error fetching global LLDP map data: {e}")
+        except Exception as e:
+            logging.error(f"An unexpected error occurred in get_global_lldp_map_for_ui: {e}", exc_info=True)
+            raise MTControllerException(f"An unexpected error occurred in get_global_lldp_map_for_ui: {e}")
     
     # ==========================================================================
     # Internal API Fetch Helper Methods

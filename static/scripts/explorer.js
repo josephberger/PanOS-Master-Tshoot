@@ -1,3 +1,5 @@
+// static/scripts/explorer.js
+
 document.addEventListener('DOMContentLoaded', () => {
     // --- DOM Element References ---
     const explorerForm = document.getElementById('explorer-form');
@@ -7,12 +9,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const dataTypeSelect = document.getElementById('data-type-select');
     const resultsContainer = document.getElementById('results-container');
     const messageContainer = document.getElementById('message-container');
-    const controls = document.querySelector('.controls');
-    const controlsHeader = document.getElementById('controls-header');
+    // Removed controls and controlsHeader as they are handled by global.js
+    // const controls = document.querySelector('.controls');
+    // const controlsHeader = document.getElementById('controls-header');
     const contextualFiltersContainer = document.getElementById('contextual-filters-container');
     const resultsHeader = document.getElementById('results-header');
     const exportCsvBtn = document.getElementById('export-csv-btn');
-    // NEW: References for filter controls
     const filterControls = document.getElementById('filter-controls');
     const filterInput = document.getElementById('filter-input');
 
@@ -86,7 +88,6 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsContainer.innerHTML = '<p class="placeholder-text">Fetching data...</p>';
         messageContainer.innerHTML = '';
         resultsHeader.style.display = 'none';
-        // NEW: Hide filter controls and clear input
         filterControls.style.display = 'none';
         filterInput.value = '';
 
@@ -118,7 +119,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderResults(results, dataType) {
-        // Hide controls by default
         resultsHeader.style.display = 'none';
         filterControls.style.display = 'none';
         filterInput.value = '';
@@ -157,7 +157,6 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsContainer.innerHTML = '';
         resultsContainer.appendChild(table);
         
-        // NEW: Make table sortable and show relevant controls
         makeTableSortable(table);
         resultsHeader.style.display = 'flex';
         filterControls.style.display = 'block';
@@ -176,7 +175,6 @@ document.addEventListener('DOMContentLoaded', () => {
         resultsContainer.innerHTML = '<p class="placeholder-text">Performing FIB lookup...</p>';
         messageContainer.innerHTML = '';
         resultsHeader.style.display = 'none';
-        // NEW: Hide filter controls and clear input
         filterControls.style.display = 'none';
         filterInput.value = '';
 
@@ -213,7 +211,6 @@ document.addEventListener('DOMContentLoaded', () => {
         
         for (const row of rows) {
             const rowData = [];
-            // Filter out rows that are currently hidden by the text filter
             if (row.style.display === 'none') continue;
             
             const cols = row.querySelectorAll('th, td');
@@ -236,12 +233,8 @@ document.addEventListener('DOMContentLoaded', () => {
         document.body.removeChild(downloadLink);
     }
 
-    // --- NEW: Table Sorting & Filtering Functions ---
+    // --- Table Sorting & Filtering Functions ---
 
-    /**
-     * Makes an HTML table sortable by clicking its headers.
-     * @param {HTMLTableElement} table The table element to make sortable.
-     */
     function makeTableSortable(table) {
         const headers = Array.from(table.querySelectorAll('thead th'));
 
@@ -252,12 +245,10 @@ document.addEventListener('DOMContentLoaded', () => {
                 const currentDirection = header.getAttribute('data-sort-direction');
                 const newDirection = currentDirection === 'asc' ? 'desc' : 'asc';
 
-                // Sort the rows
                 rows.sort((a, b) => {
                     const aText = a.cells[colIndex].textContent.trim();
                     const bText = b.cells[colIndex].textContent.trim();
                     
-                    // Check if data is numeric. Handles integers, floats, and IP addresses partially.
                     const aIsNumeric = !isNaN(parseFloat(aText)) && isFinite(aText);
                     const bIsNumeric = !isNaN(parseFloat(bText)) && isFinite(bText);
 
@@ -271,11 +262,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     return newDirection === 'asc' ? comparison : -comparison;
                 });
 
-                // Clear and re-add sorted rows
                 tbody.innerHTML = '';
                 tbody.append(...rows);
 
-                // Update header attributes and visual indicators
                 headers.forEach(h => {
                     h.removeAttribute('data-sort-direction');
                     h.textContent = h.textContent.replace(/ (↑|↓)$/, '');
@@ -291,11 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
     fibLookupForm.addEventListener('submit', handleFibLookup);
     dataTypeSelect.addEventListener('change', updateContextualFilters);
     
-    controlsHeader.addEventListener('click', () => {
-        controls.classList.toggle('collapsed');
-        const headerStrong = controlsHeader.querySelector('strong');
-        headerStrong.innerHTML = controls.classList.contains('collapsed') ? `<span id="menu-toggle-icon">«</span>` : `<span id="menu-toggle-icon">«</span> Menu`;
-    });
+    // Removed controlsHeader event listener - now handled by global.js
 
     exportCsvBtn.addEventListener('click', () => {
         const dataType = dataTypeSelect.value || 'data';
@@ -304,7 +289,6 @@ document.addEventListener('DOMContentLoaded', () => {
         exportTableToCSV(filename);
     });
 
-    // NEW: Real-time filtering listener
     filterInput.addEventListener('input', () => {
         const searchTerm = filterInput.value.toLowerCase();
         const table = resultsContainer.querySelector('.results-table');

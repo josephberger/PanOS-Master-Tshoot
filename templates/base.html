@@ -25,6 +25,7 @@
             <a href="/" class="nav-brand">MT-UI - {% block pagename %}Mapper{% endblock %}</a>
             <div class="nav-links">
                 <a href="/" class="{% if request.path == '/' %}active{% endif %}">Mapper</a>
+                <a href="/lldp-map" class="{% if request.path == '/lldp-map' %}active{% endif %}">LLDP Map</a> 
                 <a href="/explorer" class="{% if request.path == '/explorer' %}active{% endif %}">Data Explorer</a>
                 <a href="/devices" class="{% if request.path == '/devices' %}active{% endif %}">Device Management</a>
                 

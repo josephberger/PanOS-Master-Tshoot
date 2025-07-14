@@ -1,0 +1,215 @@
+/* /static/styles/lldp-styles.css */
+
+/* Main content area for the visualization */
+#visualization {
+    flex-grow: 1;
+    height: 100vh;
+}
+
+/* SVG container for the D3 map */
+svg {
+    width: 100%;
+    height: 100%;
+    display: block;
+    background-color: #f0f2f5;
+    border: none;
+    cursor: grab;
+}
+
+svg:active {
+    cursor: grabbing;
+}
+
+/* Tooltip (used by the map) - UPDATED FOR LARGER SIZE AND CLICK LOCK */
+.tooltip {
+    position: absolute;
+    text-align: left;
+    padding: 8px;
+    font: 12px sans-serif;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 8px;
+    /* pointer-events: none; - This will be managed by JS now */
+    opacity: 0;
+    transition: opacity 0.2s;
+    max-width: 400px; /* NEW: Increased max-width */
+    max-height: 400px; /* NEW: Increased max-height */
+    overflow-y: auto;
+    word-wrap: break-word;
+    z-index: 20;
+    box-sizing: border-box; 
+    pointer-events: none; /* Default: cannot click through it */
+}
+
+/* NEW: Style for when tooltip is locked/active by click */
+.tooltip.locked {
+    pointer-events: auto; /* Allows interaction (scrolling, clicking links inside) */
+    opacity: 1; /* Ensure it's fully visible */
+}
+
+.tooltip strong {
+    font-weight: bold;
+    display: block;
+    margin-bottom: 5px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 4px;
+}
+/* --- Map Element Styles --- */
+
+.link {
+    fill: none;
+    stroke: #999;
+    stroke-width: 2px;
+}
+
+/* NGFW Container - UPDATED FOR VIBRANT YELLOW */
+.ngfw-container {
+    stroke: #f1c40f; /* Yellow stroke */
+    stroke-width: 2.5px;
+    fill: #fdf5e6;   /* Lighter yellow fill */
+}
+
+.ngfw-label {
+    font-size: 16px;
+    font-weight: bold;
+    fill: #8b6d00; /* Darker text for readability on yellow */
+}
+
+/* LLDP Neighbor Box */
+.lldp-neighbor-group {
+    transition: opacity 0.3s ease-in-out;
+    cursor: pointer;
+}
+
+.lldp-box {
+    stroke: #7f8c8d; /* Grey stroke */
+    stroke-width: 2.5px;
+    fill: #dbe0e3;   /* Lighter grey fill */
+}
+
+/* Neighbor Hostname Label - UPDATED TO BE BOLD */
+.lldp-label {
+    fill: #34495e; /* Darker grey for text */
+    font-size: 12px;
+    font-weight: bold; /* Make neighbor hostname bold */
+}
+
+/* ------------------------------------------- */
+/* NEW/UPDATED: Interface Dots & Labels Styles */
+/* ------------------------------------------- */
+.interface-dot {
+    fill: #3498db; /* Blue dot for interfaces */
+    stroke: #2980b9;
+    stroke-width: 1px;
+    cursor: pointer;
+    transition: r 0.1s ease-in-out, fill 0.1s ease-in-out;
+}
+
+.interface-dot:hover {
+    r: 6px; /* Slightly larger on hover */
+    fill: #2980b9; /* Darker blue on hover */
+}
+
+.interface-label {
+    fill: #2c3e50; /* Dark text for readability */
+    font-size: 10px;
+    font-weight: bold; /* All labels bold */
+    text-anchor: middle;
+    pointer-events: none; /* Do not block hover events on the dot */
+    opacity: 0; /* Hidden by default */
+    transition: opacity 0.2s ease-in-out;
+}
+
+.interface-label.visible {
+    opacity: 1; /* Visible on hover */
+}
+
+/* Search Highlighting Styles */
+.highlight .lldp-box {
+    stroke: #f1c40f; /* Yellow highlight for neighbors */
+    stroke-width: 4px;
+}
+
+.highlight .interface-dot { /* Highlight dots too */
+    stroke: #f1c40f;
+    stroke-width: 3px;
+}
+
+.faded {
+    opacity: 0.2;
+}
+
+/* =================================================================== */
+/* DARK MODE THEME STYLES                                              */
+/* =================================================================== */
+
+html.dark-mode svg {
+    background-color: #1a202c;
+}
+
+html.dark-mode .tooltip {
+    background: #2d3748;
+    border-color: #4a5568;
+    color: #e2e8f0;
+}
+
+html.dark-mode .tooltip strong {
+    border-bottom-color: #4a5568;
+}
+
+/* NGFW Container - DARK MODE UPDATED FOR YELLOW */
+html.dark-mode .ngfw-container {
+    stroke: #f6e05e; /* Brighter yellow stroke */
+    fill: #3e330a;   /* Darker yellow fill */
+}
+
+html.dark-mode .ngfw-label {
+    fill: #e2e8f0; /* White text for contrast */
+}
+
+html.dark-mode .lldp-box {
+    stroke: #718096;
+    fill: #4a5568;
+}
+
+html.dark-mode .lldp-label {
+    fill: #e2e8f0;
+}
+
+/* ------------------------------------------- */
+/* NEW/UPDATED: Interface Dots & Labels DARK MODE */
+/* ------------------------------------------- */
+html.dark-mode .interface-dot {
+    fill: #3182ce; /* Darker blue dot for interfaces */
+    stroke: #4299e1;
+}
+
+html.dark-mode .interface-dot:hover {
+    fill: #4299e1;
+}
+
+html.dark-mode .interface-label {
+    fill: #e2e8f0; /* White text for contrast */
+}
+
+html.dark-mode .link {
+    stroke: #4a5568;
+}
+
+html.dark-mode .highlight .lldp-box {
+    stroke: #f6e05e; /* Bright yellow for highlight */
+}
+
+html.dark-mode .highlight .interface-dot {
+    stroke: #f6e05e;
+}
+
+/* NEW: Style for locked nodes */
+.locked-node rect {
+    stroke: #e67e22 !important; /* Orange border for locked nodes */
+    stroke-width: 3px !important;
+}
+
+html.dark-mode .locked-node rect {
+    stroke: #f39c12 !important; /* Brighter orange for dark mode */
+}

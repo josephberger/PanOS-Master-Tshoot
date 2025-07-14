@@ -1,17 +1,20 @@
+// static/scripts/mapper-script.js
+
 document.addEventListener('DOMContentLoaded', () => {
     // --- Global Constants and Initial Setup ---
     const svg = d3.select("#visualization").append("svg");
     const mapGroup = svg.append("g");
-    const tooltip = d3.select(".tooltip");
+    const tooltip = d3.select(".tooltip"); 
 
     // --- DOM Element References ---
     const searchInput = document.getElementById('searchInput');
     const vrSelector = document.getElementById('vrSelector');
     const resetViewBtn = document.getElementById('resetViewBtn');
     const loadAllBtn = document.getElementById('loadAllBtn');
-    const exportSvgBtn = document.getElementById('exportSvgBtn'); // <-- Get the new button
-    const controls = document.querySelector('.controls');
-    const controlsHeader = document.getElementById('controls-header');
+    const exportSvgBtn = document.getElementById('exportSvgBtn'); 
+    // controlsHeader event listener is now handled by global.js
+    // const controls = document.querySelector('.controls'); 
+    // const controlsHeader = document.getElementById('controls-header');
     const logModal = document.getElementById('task-log-modal');
     const logOutput = document.getElementById('log-output');
     const closeLogBtn = document.getElementById('close-log-btn');
@@ -98,45 +101,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    async function exportSvg() {
-        if (!mapGroup.node().hasChildNodes()) {
-            alert("The map is empty. There is nothing to export.");
-            return;
-        }
-        const svgClone = svg.node().cloneNode(true);
-        const darkThemeMq = window.matchMedia("(prefers-color-scheme: dark)");
-        const cssPaths = ['/static/styles/main-styles.css', '/static/styles/mapper-styles.css'];
-        let allCss = '';
-        for (const path of cssPaths) {
-            try {
-                const response = await fetch(path);
-                if (response.ok) {
-                    allCss += await response.text();
-                }
-            } catch (error) {
-                console.error('Could not fetch stylesheet for export:', path, error);
-            }
-        }
-        const styleElement = document.createElement('style');
-        styleElement.innerHTML = allCss;
-        const defsElement = document.createElement('defs');
-        defsElement.appendChild(styleElement);
-        svgClone.insertBefore(defsElement, svgClone.firstChild);
-        if (document.documentElement.classList.contains('dark-mode')) {
-            svgClone.classList.add('dark-mode');
-        }
-        const svgString = new XMLSerializer().serializeToString(svgClone);
-        const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = 'mt-map.svg';
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        URL.revokeObjectURL(url);
-    }
-
     // --- Task Management and Log Modal Logic ---
     function showLogModal() {
         logOutput.textContent = 'Initializing task...';
@@ -207,8 +171,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             mapGroup.selectAll("*").remove();
             if (currentMapKey) {
-                const viz = document.getElementById('visualization');
-                drawSingleMap(data, mapGroup, viz.clientWidth / 2, viz.clientHeight / 2);
+                drawSingleMap(data, mapGroup, svg.clientWidth / 2, svg.clientHeight / 2); // Pass actual svg dimensions
             } else {
                 drawAllMaps(data);
             }
@@ -220,8 +183,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- UI and Drawing Functions ---
+    // These drawing functions remain in mapper-script.js as they are specific to this page's map structure
     
-    // UPDATED: Refactored function to display richer interface details.
     function showInspector(nodeData) {
         document.getElementById('main-controls').style.display = 'none';
         const panel = document.getElementById('inspector-panel');
@@ -353,9 +316,9 @@ document.addEventListener('DOMContentLoaded', () => {
                         traceGroup.append('circle').attr('class', 'target-middle').attr('r', 30);
                         traceGroup.append('circle').attr('class', 'target-inner').attr('r', 15);
                     } else if (node.trace_type === 'ingress-egress') {
-                        traceGroup.append('circle').attr('class', 'target-outer').attr('r', 45);
-                        traceGroup.append('circle').attr('class', 'target-middle').attr('r', 30);
-                        traceGroup.append('path').attr('class', 'star-overlay').attr('d', d3.symbol().type(d3.symbolStar).size(size * 0.8));
+                        traceGroup.append('circle').attr("class", 'target-outer').attr('r', 45);
+                        traceGroup.append('circle').attr("class", 'target-middle').attr('r', 30);
+                        traceGroup.append('path').attr("class", 'star-overlay').attr('d', d3.symbol().type(d3.symbolStar).size(size * 0.8));
                     }
                 }
 
@@ -437,11 +400,9 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Attach Event Listeners ---
-    controlsHeader.addEventListener('click', () => {
-        controls.classList.toggle('collapsed');
-        const headerStrong = controlsHeader.querySelector('strong');
-        headerStrong.innerHTML = controls.classList.contains('collapsed') ? `<span id="menu-toggle-icon">«</span>` : `<span id="menu-toggle-icon">«</span> Menu`;
-    });
+    // controlsHeader.addEventListener is now handled by global.js
+    // controlsHeader.addEventListener('click', () => { ... });
+
     resetViewBtn.addEventListener('click', () => {
         document.getElementById('map-trace-form').reset();
         loadAndDrawAllMaps();
@@ -459,7 +420,16 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     closeLogBtn.addEventListener('click', closeLogModal);
     mapTraceForm.addEventListener('submit', handleMapPathTrace);
-    exportSvgBtn.addEventListener('click', exportSvg);
+    
+    // MODIFIED: exportSvgBtn to call the global function
+    exportSvgBtn.addEventListener('click', () => {
+        const currentMapKey = vrSelector.value;
+        let filename = 'mapper-map';
+        if (currentMapKey) {
+            filename = currentMapKey.replace(/[^a-zA-Z0-9-]/g, '_'); // Sanitize key for filename
+        }
+        window.exportSvg(svg, mapGroup, filename); // Pass svg, mapGroup, and desired filename prefix
+    });
 
     // --- Initial Load ---
     setupSvgSize();

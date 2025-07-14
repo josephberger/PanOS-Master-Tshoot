@@ -3,6 +3,7 @@ import time
 import uuid
 from threading import Thread
 import ipaddress
+import json
 from flask import Flask, jsonify, render_template, Response, request
 
 # Import controller exceptions, including the specific schema error
@@ -106,6 +107,10 @@ def data_explorer():
     """Renders the new Data Explorer page."""
     return render_template('explorer.html')
 
+@app.route('/lldp-map')
+def lldp_map():
+    """Renders the LLDP neighbor map page."""
+    return render_template('lldp.html')
 
 # --- API Endpoints ---
 
@@ -143,6 +148,24 @@ def get_map_keys():
     if not controller: return jsonify({"error": "Controller not available"}), 503
     try:
         return jsonify(controller.get_all_map_keys())
+    except MTControllerException as e:
+        return jsonify({"error": str(e)}), 500
+
+# NEW DEDICATED ENDPOINT FOR GLOBAL LLDP MAP
+@app.route('/api/lldp-map/all', methods=['GET'])
+def get_all_lldp_map_data():
+    """
+    API endpoint to retrieve consolidated, global LLDP network data (nodes and links)
+    for a force-directed graph visualization.
+    """
+    if not controller:
+        return jsonify({"error": "Controller not available"}), 503
+    try:
+        global_lldp_data = controller.get_global_lldp_map_for_ui()
+        if global_lldp_data:
+            return jsonify(global_lldp_data)
+        else:
+            return jsonify({"nodes": [], "links": []}) # Return empty lists if no data
     except MTControllerException as e:
         return jsonify({"error": str(e)}), 500
 
@@ -449,6 +472,8 @@ def query_data():
         else:
             return jsonify({"error": "Invalid data type specified"}), 400
         
+        print(response_data)  # Debugging output to see the response structure
+
         return jsonify(response_data)
 
     except MTControllerException as e:
@@ -553,6 +578,25 @@ def map_trace():
             
         return jsonify(traced_map_data)
 
+    except MTControllerException as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/api/lldp-map/single/<string:ngfw_hostname>', methods=['GET'])
+def get_single_lldp_map_data(ngfw_hostname):
+    """
+    API endpoint to retrieve grouped LLDP neighbor data for a specific NGFW,
+    pre-compiled for the LLDP map visualization.
+    """
+    if not controller:
+        return jsonify({"error": "Controller not available"}), 503
+    try:
+        grouped_lldp_data = controller.get_lldp_map_for_ui(ngfw_hostname)
+        if grouped_lldp_data:
+            with open('lldp_map_debug.json', 'w') as f:
+                json.dump(grouped_lldp_data, f, indent=4)
+            return jsonify(grouped_lldp_data)
+        else:
+            return jsonify({"error": f"LLDP map data not found for NGFW '{ngfw_hostname}'"}), 404
     except MTControllerException as e:
         return jsonify({"error": str(e)}), 500
 

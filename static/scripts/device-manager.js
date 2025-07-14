@@ -1,10 +1,13 @@
+// static/scripts/device-manager.js
+
 document.addEventListener('DOMContentLoaded', () => {
     // --- DOM Element References ---
     const deviceInventoryList = document.getElementById('device-inventory-list');
     const addPanForm = document.getElementById('add-pan-form');
     const addNgfwForm = document.getElementById('add-ngfw-form');
-    const controls = document.querySelector('.controls');
-    const controlsHeader = document.getElementById('controls-header');
+    // Removed controls and controlsHeader as they are handled by global.js
+    // const controls = document.querySelector('.controls');
+    // const controlsHeader = document.getElementById('controls-header');
     
     // Global Action Buttons
     const importBtn = document.getElementById('importBtn');
@@ -15,7 +18,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateBgpBtn = document.getElementById('updateBgpBtn');
     const updateLldpBtn = document.getElementById('updateLldpBtn');
 
-    // Modal Elements
+    // Modal Elements (these are specific to this page's task log modal)
     const logModal = document.getElementById('task-log-modal');
     const logOutput = document.getElementById('log-output');
     const closeLogBtn = document.getElementById('close-log-btn');
@@ -24,6 +27,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let eventSource = null;
 
     // --- Core Functions ---
+    // showAppModal remains here as it's a specific type of modal for this page's interactions
     function showAppModal(message, isConfirm = false, onConfirm = null) {
         const existingModal = document.querySelector('.app-modal-backdrop');
         if (existingModal) existingModal.remove();
@@ -447,8 +451,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if (importBtn) importBtn.addEventListener('click', () => startTask('/api/tasks/import/start'));
     if (refreshBtn) refreshBtn.addEventListener('click', () => startTask('/api/tasks/refresh/start'));
     if (updateHaBtn) updateHaBtn.addEventListener('click', () => startTask('/api/tasks/update-ha/start'));
-    if (closeLogBtn) closeLogBtn.addEventListener('click', closeLogModal);
-
     if (updateRoutesBtn) updateRoutesBtn.addEventListener('click', () => handleGlobalUpdate('update all routes', '/api/tasks/update-routes/start'));
     if (updateArpsBtn) updateArpsBtn.addEventListener('click', () => handleGlobalUpdate('update all ARPs', '/api/tasks/update-arps/start'));
     if (updateBgpBtn) updateBgpBtn.addEventListener('click', () => handleGlobalUpdate('update all BGP peers', '/api/tasks/update-bgp/start'));
@@ -494,18 +496,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-
-    if (controlsHeader) {
-        controlsHeader.addEventListener('click', () => {
-            controls.classList.toggle('collapsed');
-            const headerStrong = controlsHeader.querySelector('strong');
-            if (headerStrong) {
-                 headerStrong.innerHTML = controls.classList.contains('collapsed') 
-                    ? `<span id="menu-toggle-icon">«</span>` 
-                    : `<span id="menu-toggle-icon">«</span> Menu`;
-            }
-        });
-    }
+    // Removed controlsHeader event listener - now handled by global.js
+    // if (controlsHeader) { ... }
 
     // --- Initial Load ---
     fetchAndDisplayInventory();

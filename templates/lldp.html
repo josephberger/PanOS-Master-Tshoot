@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block title %}MT-Mapper - LLDP Neighbors{% endblock %}
+{% block pagename %}LLDP Neighbors{% endblock %}
+
+{% block head_content %}
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="{{ url_for('static', filename='styles/lldp-styles.css') }}">
+{% endblock %}
+
+{% block content %}
+<div id="app-container">
+    <div class="controls">
+        <div id="controls-header">
+            <strong><span id="menu-toggle-icon">«</span> Menu</strong>
+        </div>
+        <div id="controls-body">
+            <div id="main-controls">
+                <button id="loadAllLldpBtn" class="button-primary">Load All LLDP Maps</button>
+                <button id="toggleAllNodesLockBtn" class="button-secondary" style="margin-top: 5px;">Lock All Nodes</button> {# NEW BUTTON #}
+                <label for="ngfwSelector">Single NGFW View</label>
+                <select id="ngfwSelector"></select>
+                
+                <hr class="section-divider">
+                <label for="searchInput">Search Current View</label>
+                <input type="text" id="searchInput" placeholder="e.g., Hostname, eth1/1">
+                <div class="button-group">
+                    <button id="resetViewBtn" class="button-secondary">Reset View</button>
+                    <button id="exportSvgBtn" class="button-secondary">Export to SVG</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="visualization"></div>
+</div>
+<div class="tooltip"></div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='scripts/main-lldp-app.js') }}"></script>
+<script src="{{ url_for('static', filename='scripts/draw-single-lldp-map.js') }}"></script>
+<script src="{{ url_for('static', filename='scripts/draw-global-lldp-map.js') }}"></script>
+{% endblock %}
