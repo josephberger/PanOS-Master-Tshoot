@@ -21,10 +21,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // Modal Elements (these are specific to this page's task log modal)
     const logModal = document.getElementById('task-log-modal');
     const logOutput = document.getElementById('log-output');
-    const closeLogBtn = document.getElementById('close-log-btn');
+    // closeLogBtn is now handled by global.js
+    // const closeLogBtn = document.getElementById('close-log-btn');
 
     // --- Global Variables ---
-    let eventSource = null;
+    let eventSource = null; // This eventSource is specific to this script's task streams
 
     // --- Core Functions ---
     // showAppModal remains here as it's a specific type of modal for this page's interactions
@@ -348,23 +349,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    function showLogModal() {
-        if (logModal) {
-            logOutput.textContent = 'Initializing task...';
-            logModal.style.display = 'flex';
-        }
-    }
-
-    function closeLogModal() {
-        if (logModal) logModal.style.display = 'none';
-        if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-        }
-    }
+    // showLogModal and closeLogModal moved to global.js
+    // function showLogModal() { ... }
+    // function closeLogModal() { ... }
     
     async function startTask(startUrl) {
-        showLogModal();
+        window.showLogModal(); // Call global showLogModal
         try {
             const startResponse = await fetch(startUrl, { method: 'POST' });
             if (!startResponse.ok) {
@@ -372,6 +362,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(err.error || `Failed to start task: ${startResponse.statusText}`);
             }
             const data = await startResponse.json();
+            // logOutput is a DOM element reference local to this file.
+            // globalEventSource is defined in global.js
             logOutput.textContent = `Task started with ID: ${data.task_id}\nConnecting to log stream...\n\n`;
             connectToStream(data.task_id);
         } catch (error) {
@@ -380,7 +372,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function startDeviceActionTask(platform, taskType, filterValue) {
-        showLogModal();
+        window.showLogModal(); // Call global showLogModal
         try {
             const startResponse = await fetch('/api/tasks/device-action/start', {
                 method: 'POST',
@@ -396,6 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 throw new Error(err.error || `Failed to start task: ${startResponse.statusText}`);
             }
             const data = await startResponse.json();
+            // logOutput is a DOM element reference local to this file.
             logOutput.textContent = `Task '${taskType}' started for ${platform} ${filterValue}\n(ID: ${data.task_id})\nConnecting to log stream...\n\n`;
             connectToStream(data.task_id);
         } catch (error) {
@@ -427,21 +420,22 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function connectToStream(taskId) {
         if (eventSource) eventSource.close();
-        eventSource = new EventSource(`/api/tasks/stream/${taskId}`);
-        eventSource.onopen = () => { logOutput.textContent += 'Connection to log stream established.\n----------------------------------------\n'; };
-        eventSource.onmessage = (event) => {
+        // Use globalEventSource from global.js for the stream connection
+        window.globalEventSource = new EventSource(`/api/tasks/stream/${taskId}`); 
+        window.globalEventSource.onopen = () => { logOutput.textContent += 'Connection to log stream established.\n----------------------------------------\n'; };
+        window.globalEventSource.onmessage = (event) => {
             logOutput.textContent += event.data + '\n';
             if (logOutput.parentElement) logOutput.parentElement.scrollTop = logOutput.parentElement.scrollHeight;
             if (event.data.includes('--- TASK')) {
-                eventSource.close();
-                eventSource = null;
+                window.globalEventSource.close();
+                window.globalEventSource = null;
                 fetchAndDisplayInventory();
             }
         };
-        eventSource.onerror = () => {
+        window.globalEventSource.onerror = () => {
             logOutput.textContent += '\n----------------------------------------\nConnection to log stream lost.';
-            if (eventSource) eventSource.close();
-            eventSource = null;
+            if (window.globalEventSource) window.globalEventSource.close();
+            window.globalEventSource = null;
         };
     }
 
@@ -455,6 +449,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (updateArpsBtn) updateArpsBtn.addEventListener('click', () => handleGlobalUpdate('update all ARPs', '/api/tasks/update-arps/start'));
     if (updateBgpBtn) updateBgpBtn.addEventListener('click', () => handleGlobalUpdate('update all BGP peers', '/api/tasks/update-bgp/start'));
     if (updateLldpBtn) updateLldpBtn.addEventListener('click', () => handleGlobalUpdate('update all LLDP neighbors', '/api/tasks/update-lldp/start'));
+
+    // closeLogBtn is now handled by global.js
+    // if (closeLogBtn) closeLogBtn.addEventListener('click', closeLogModal);
 
     if (deviceInventoryList) {
         deviceInventoryList.addEventListener('click', (event) => {
@@ -496,7 +493,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         });
     }
-    // Removed controlsHeader event listener - now handled by global.js
+    // controlsHeader event listener is now handled by global.js
     // if (controlsHeader) { ... }
 
     // --- Initial Load ---

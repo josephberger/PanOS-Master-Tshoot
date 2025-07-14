@@ -50,25 +50,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// NEW: Global SVG Export Function
+// Global SVG Export Function
 window.exportSvg = async function(svgElement, mapGroupElement, filenamePrefix = 'map') {
     if (!mapGroupElement || !mapGroupElement.node() || !mapGroupElement.node().hasChildNodes()) {
         alert("The map is empty. There is nothing to export.");
         return;
     }
     const svgClone = svgElement.node().cloneNode(true);
-    // You might need to dynamically determine which CSS file is relevant for the *current* page's styles
-    // For now, let's assume a common set or pass an array of CSS paths.
-    // For the original mapper, it uses mapper-styles.css. For LLDP, it uses lldp-styles.css.
-    // This function can take a parameter for relevant CSS files, or try to infer.
-    // For simplicity, let's try to include both and let the browser handle duplicates.
-    // A more robust solution might pass active CSS paths from the calling page.
 
-    // A better way might be to pass an array of relevant CSS files from the calling script
     let cssPathsToInclude = [];
-    if (filenamePrefix.includes('lldp-map')) { // Heuristic: if filename suggests LLDP map
+    if (filenamePrefix.includes('lldp-map')) {
         cssPathsToInclude = ['/static/styles/main-styles.css', '/static/styles/lldp-styles.css'];
-    } else { // Assume default mapper styles
+    } else {
         cssPathsToInclude = ['/static/styles/main-styles.css', '/static/styles/mapper-styles.css'];
     }
 
@@ -102,3 +95,34 @@ window.exportSvg = async function(svgElement, mapGroupElement, filenamePrefix = 
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
 };
+
+// NEW: Global Task Log Modal Functions
+let globalEventSource = null; // Use a distinct name to avoid conflicts if other scripts have 'eventSource'
+
+window.showLogModal = function() {
+    const logModal = document.getElementById('task-log-modal');
+    const logOutput = document.getElementById('log-output');
+    if (logModal && logOutput) {
+        logOutput.textContent = 'Initializing task...';
+        logModal.style.display = 'flex';
+    } else {
+        console.warn("Task log modal elements not found.");
+    }
+}
+
+window.closeLogModal = function() {
+    const logModal = document.getElementById('task-log-modal');
+    if (logModal) logModal.style.display = 'none';
+    if (globalEventSource) { // Use globalEventSource
+        globalEventSource.close();
+        globalEventSource = null;
+    }
+}
+
+// Attach the close listener globally to the button that exists on all pages with the modal
+document.addEventListener('DOMContentLoaded', () => {
+    const closeLogBtn = document.getElementById('close-log-btn');
+    if (closeLogBtn) {
+        closeLogBtn.addEventListener('click', window.closeLogModal);
+    }
+});
