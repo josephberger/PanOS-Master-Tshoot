@@ -1,6 +1,5 @@
 // static/scripts/draw-global-lldp-map.js
 
-// drawGlobalLldpMap now takes hideTooltip as an argument
 function drawGlobalLldpMap(mapGroup, tooltip, simulation, nodes, links) {
     console.log("drawGlobalLldpMap: Starting with nodes:", nodes, "and links:", links);
 
@@ -44,125 +43,103 @@ function drawGlobalLldpMap(mapGroup, tooltip, simulation, nodes, links) {
         .attr("class", d => d.type === 'ngfw' ? 'ngfw-label' : 'lldp-label')
         .text(d => d.label);
 
-    // Add tooltips to nodes (for global map) - REVISED FOR CLICK ACTIVATION AND PREVIEW BEHAVIOR
+    // --- REVISED EVENT HANDLERS ---
     node
         .on("click", function(event, d) {
             event.stopPropagation();
+            window.hideTooltip(); // Hide any active preview tooltip on click
 
-            // If this tooltip is already locked for THIS node, unlock it
-            if (window.tooltipLocked && window.activeTooltipNode === d) {
-                window.hideTooltip();
-                return;
-            }
-
-            // Hide any currently locked tooltip (if it belongs to a different node)
-            if (window.tooltipLocked && window.activeTooltipNode !== d) {
-                window.hideTooltip();
-            }
-
-            // Show and lock the tooltip for this node
-            tooltip.transition().duration(200).style("opacity", .9);
-            tooltip.classed("locked", true);
-            window.tooltipLocked = true;
-            window.activeTooltipNode = d;
-
-            let tooltipHtml = `<strong>${d.name}</strong><br>`;
-            if (d.type === 'ngfw') {
-                tooltipHtml += `Serial: ${d.serial_number}<br>Type: NGFW`;
-            } else {
-                tooltipHtml += `Type: LLDP Neighbor`;
-            }
-            if (d.locked) {
-                tooltipHtml += `<br>Status: Locked (Double-click to unlock)`;
-            } else {
-                tooltipHtml += `<br>Status: Unlocked (Double-click to lock)`;
-            }
-
+            // Retrieve the full list of links from the simulation's force link, as 'links' variable
+            // might be a copy or not reflect ongoing simulation state if it was paused etc.
             const allCurrentLinks = simulation.force("link").links();
-            const relevantLinks = allCurrentLinks.filter(l => l.source.id === d.id || l.target.id === d.id);
 
-            if (relevantLinks.length > 0) {
-                tooltipHtml += "<br><br>Connections:<br>";
+            let connectionsForInspector = [];
+
+            if (d.type === 'ngfw') {
+                // For NGFW nodes, filter links where the NGFW is either source or target
+                const relevantLinks = allCurrentLinks.filter(l => l.source.id === d.id || l.target.id === d.id);
                 relevantLinks.forEach(l => {
-                    const bullet = '&#x25CF; ';
-                    tooltipHtml += `${bullet} `;
-
                     const isSourceNode = (l.source.id === d.id);
-                    const connectedDeviceName = isSourceNode ? l.target.name : l.source.name;
-                    const connectedNgfwHostname = l.ngfw_hostname;
+                    const connectedNode = isSourceNode ? l.target : l.source; // Get the other node in the link
 
-                    // Removed "To " prefix and adjusted "via NGFW"
-                    if (d.type === 'ngfw' && l.target.type === 'ngfw' && l.target.name === connectedNgfwHostname) {
-                         tooltipHtml += `${connectedDeviceName}<br>`;
-                    } else if (d.type === 'remote_device' && l.source.type === 'ngfw' && l.source.name === connectedNgfwHostname) {
-                         tooltipHtml += `NGFW ${connectedNgfwHostname}<br>`;
-                    } else {
-                        tooltipHtml += `${connectedDeviceName} (via NGFW ${connectedNgfwHostname})<br>`;
-                    }
+                    connectionsForInspector.push({
+                        ngfw_hostname: l.ngfw_hostname,
+                        local_interface: l.local_interface,
+                        remote_interface_id: l.remote_interface_id,
+                        remote_interface_description: l.remote_interface_description,
+                        connected_device_name: connectedNode.name, // The name of the connected neighbor/NGFW
+                        connected_device_type: connectedNode.type
+                    });
+                });
+            } else if (d.type === 'remote_device') { // Changed 'lldp_neighbor' to 'remote_device' based on Python backend
+                // For LLDP Neighbor nodes, filter links where this neighbor is either source or target
+                // Each link represents a connection *to* an NGFW, and contains the NGFW's info.
+                const relevantLinks = allCurrentLinks.filter(l => l.source.id === d.id || l.target.id === d.id);
+                relevantLinks.forEach(l => {
+                    // Determine which end of the link is the NGFW and which is the neighbor
+                    const ngfwNode = (l.source.type === 'ngfw') ? l.source : l.target;
+                    const neighborNode = (l.source.type === 'remote_device') ? l.source : l.target; // Use 'remote_device'
 
-                    tooltipHtml += `&nbsp;&nbsp;NGFW Interface: ${l.local_interface}<br>`;
-                    tooltipHtml += `&nbsp;&nbsp;Interface: ${l.remote_interface_id}`;
-                    if (l.remote_interface_description) {
-                        tooltipHtml += `<br>&nbsp;&nbsp;Description: ${l.remote_interface_description}`;
+                    // Ensure this link actually involves the clicked neighbor and an NGFW
+                    // This condition also ensures we're only looking at links directly connected to the clicked 'd' node
+                    if ((ngfwNode.id === l.source.id && neighborNode.id === l.target.id && neighborNode.id === d.id) ||
+                        (ngfwNode.id === l.target.id && neighborNode.id === l.source.id && neighborNode.id === d.id)) {
+
+                        connectionsForInspector.push({
+                            // The NGFW's hostname for this specific connection
+                            ngfw_hostname: l.ngfw_hostname,
+                            // The NGFW's interface from this connection
+                            local_interface: l.local_interface,
+                            // The neighbor's interface from this connection
+                            remote_interface_id: l.remote_interface_id,
+                            // The neighbor's interface description from this connection
+                            remote_interface_description: l.remote_interface_description
+                        });
                     }
-                    tooltipHtml += `<br>`;
                 });
             }
 
-            tooltip.html(tooltipHtml);
+            // Construct nodeData to pass to the inspector
+            let nodeDataForInspector = {
+                name: d.name, // Use 'name' for title
+                type: d.type, // 'ngfw' or 'remote_device'
+                locked: d.locked,
+                connections: connectionsForInspector // Pass the connections array directly
+            };
 
-            const mouseX = event.pageX;
-            const mouseY = event.pageY;
-            const tooltipWidth = tooltip.node().offsetWidth;
-            const tooltipHeight = tooltip.node().offsetHeight;
-
-            const viewportWidth = window.innerWidth;
-            const viewportHeight = window.innerHeight;
-
-            let left = mouseX + 10;
-            let top = mouseY - 28;
-
-            if (left + tooltipWidth > viewportWidth - 20) {
-                left = mouseX - tooltipWidth - 10;
+            if (d.type === 'ngfw') {
+                nodeDataForInspector.serial_number = d.serial_number;
+                nodeDataForInspector.model = d.model;
+            } else if (d.type === 'remote_device') {
+                // For remote_device, map 'name' to 'remote_hostname' as expected by showInspector
+                nodeDataForInspector.remote_hostname = d.name;
             }
 
-            if (top + tooltipHeight > viewportHeight - 20) {
-                top = viewportHeight - tooltipHeight - 20;
-                if (top < 0) top = 0;
-            }
-
-            tooltip.style("left", left + "px")
-                   .style("top", top + "px");
+            // Call the global showInspector function
+            window.showInspector(nodeDataForInspector);
         })
         .on("mouseover", function(event, d) {
-            // Show preview only if NO tooltip is currently locked (anywhere)
-            if (window.tooltipLocked) return;
+            // Only show preview tooltip if inspector is NOT open
+            const inspectorPanel = document.getElementById('inspector-panel');
+            if (inspectorPanel && inspectorPanel.classList.contains('inspector-open')) {
+                return; // Do not show preview tooltip if inspector is already open
+            }
 
-            tooltip.transition().duration(50).style("opacity", .7);
+            tooltip.transition().duration(50).style("opacity", .7); // Brief fade-in
             let tooltipHtml = `<strong>${d.name}</strong><br>`;
+
+            // Brief details for tooltip preview
             if (d.type === 'ngfw') {
-                tooltipHtml += `Serial: ${d.serial_number}<br>Type: NGFW`;
-            } else {
-                tooltipHtml += `Type: LLDP Neighbor`;
+                tooltipHtml += `Type: NGFW<br>`;
+                tooltipHtml += `Serial: ${d.serial_number || 'N/A'}`;
+            } else { // remote_device
+                tooltipHtml += `Type: LLDP Neighbor<br>`;
             }
-            // Only add a few connections for preview to keep it light
-            const allCurrentLinks = simulation.force("link").links();
-            const relevantLinks = allCurrentLinks.filter(l => l.source.id === d.id || l.target.id === d.id);
-            if (relevantLinks.length > 0) {
-                tooltipHtml += "<br><br>Connections:<br>";
-                // Show first 2 connections in preview
-                relevantLinks.slice(0,2).forEach(l => {
-                    const bullet = '&#x25CF; ';
-                    tooltipHtml += `${bullet} `;
-                    const isSourceNode = (l.source.id === d.id);
-                    const connectedDeviceName = isSourceNode ? l.target.name : l.source.name;
-                    tooltipHtml += `${connectedDeviceName}<br>`;
-                });
-                if (relevantLinks.length > 2) tooltipHtml += `<br>...(${relevantLinks.length - 2} more)`;
-            }
+            tooltipHtml += `<br>Status: ${d.locked ? 'Locked' : 'Unlocked'} (Double-click to ${d.locked ? 'unlock' : 'lock'})`;
 
             tooltip.html(tooltipHtml);
 
+            // Positioning logic for tooltip (copied from previous version)
             const mouseX = event.pageX;
             const mouseY = event.pageY;
             const tooltipWidth = tooltip.node().offsetWidth;
@@ -176,13 +153,15 @@ function drawGlobalLldpMap(mapGroup, tooltip, simulation, nodes, links) {
             tooltip.style("left", left + "px")
                    .style("top", top + "px");
         })
-        .on("mouseout", function(d) {
-            // Hide preview tooltip unconditionally on mouseout
-            if (!window.tooltipLocked) {
-                window.hideTooltip();
+        .on("mouseout", function(event, d) {
+            // Only hide preview tooltip if inspector is NOT open
+            const inspectorPanel = document.getElementById('inspector-panel');
+            if (inspectorPanel && inspectorPanel.classList.contains('inspector-open')) {
+                return; // Keep tooltip if inspector is open (to avoid flicker when moving mouse over inspector)
             }
+            window.hideTooltip(); // Calls the global hideTooltip which checks window.tooltipLocked
         })
-        .on("dblclick", function(event, d) { // <<< ADDED event.stopPropagation()
+        .on("dblclick", function(event, d) {
             event.stopPropagation(); // Prevent zoom on double click
 
             d.locked = !d.locked; // Toggle locked state
@@ -198,6 +177,63 @@ function drawGlobalLldpMap(mapGroup, tooltip, simulation, nodes, links) {
                 console.log(`Unlocked node: ${d.name}`);
             }
             simulation.alpha(0.3).restart(); // Restart simulation to react to fixed nodes
+
+            // Update inspector if it's open for this node to reflect new lock status
+            const inspectorPanel = document.getElementById('inspector-panel');
+            if (inspectorPanel && inspectorPanel.classList.contains('inspector-open') && window.activeInspectorNode && window.activeInspectorNode.id === d.id) {
+                // Re-show inspector with updated data
+                // Re-prepare connections data as locked status might affect it in some hypothetical future logic
+                const allCurrentLinks = simulation.force("link").links();
+                const relevantLinks = allCurrentLinks.filter(l => l.source.id === d.id || l.target.id === d.id);
+                
+                let updatedConnections = [];
+                if (d.type === 'ngfw') {
+                    relevantLinks.forEach(l => {
+                        const isSourceNode = (l.source.id === d.id);
+                        const connectedNode = isSourceNode ? l.target : l.source;
+                        updatedConnections.push({
+                            ngfw_hostname: l.ngfw_hostname,
+                            local_interface: l.local_interface,
+                            remote_interface_id: l.remote_interface_id,
+                            remote_interface_description: l.remote_interface_description,
+                            connected_device_name: connectedNode.name,
+                            connected_device_type: connectedNode.type
+                        });
+                    });
+                } else if (d.type === 'remote_device') { // Use 'remote_device' here too
+                    relevantLinks.forEach(l => {
+                        const ngfwNode = (l.source.type === 'ngfw') ? l.source : l.target;
+                        const neighborNode = (l.source.type === 'remote_device') ? l.source : l.target; // Use 'remote_device'
+
+                        if ((ngfwNode.id === l.source.id && neighborNode.id === l.target.id && neighborNode.id === d.id) ||
+                            (ngfwNode.id === l.target.id && neighborNode.id === l.source.id && neighborNode.id === d.id)) {
+                            updatedConnections.push({
+                                ngfw_hostname: l.ngfw_hostname,
+                                local_interface: l.local_interface,
+                                remote_interface_id: l.remote_interface_id,
+                                remote_interface_description: l.remote_interface_description
+                            });
+                        }
+                    });
+                }
+
+                // Prepare the updated node data for the inspector
+                let updatedNodeDataForInspector = {
+                    name: d.name,
+                    type: d.type,
+                    locked: d.locked, // Pass the updated locked status
+                    connections: updatedConnections // Pass the re-prepared connections
+                };
+
+                if (d.type === 'ngfw') {
+                    updatedNodeDataForInspector.serial_number = d.serial_number;
+                    updatedNodeDataForInspector.model = d.model;
+                } else if (d.type === 'remote_device') {
+                    updatedNodeDataForInspector.remote_hostname = d.name; // Map 'name' to 'remote_hostname'
+                }
+                
+                window.showInspector(updatedNodeDataForInspector);
+            }
         });
 
     node.call(d3.drag()

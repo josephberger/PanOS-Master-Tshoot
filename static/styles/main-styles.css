@@ -262,8 +262,255 @@ body {
 }
 
 /* Common Inspector Panel Styles */
+/* static/styles/mapper-styles.css */
+
+/* ... (existing styles) ... */
+
+/* =================================================================== */
+/* INSPECTOR PANEL STYLES (ENHANCED & SLIDE-IN)                        */
+/* =================================================================== */
+
+/* Inspector Panel - now fixed position, slides from right */
 #inspector-panel {
-    display: none;
+    position: fixed; /* Fixed relative to viewport */
+    top: var(--header-height, 60px); /* Adjust this to the height of your main title bar */
+    right: -450px; /* Initially off-screen to the right */
+    width: 420px; /* Desired width when open */
+    height: calc(100vh - var(--header-height, 60px)); /* Fill remaining height below header */
+    background: var(--sidebar-bg-color, #fff);
+    box-shadow: -4px 0 10px rgba(0, 0, 0, 0.2); /* Shadow on the left side */
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    z-index: 100; /* Ensure it's above everything else except possibly fixed top nav */
+    transition: right 0.3s ease-in-out; /* Smooth slide transition */
+    padding: 0;
+}
+
+/* Class to apply when the inspector is open */
+#inspector-panel.inspector-open {
+    right: 0; /* Slide into view */
+}
+
+#inspector-panel .modal-header {
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border-color-light, #eee);
+    display: flex; /* Flexbox for title and close button */
+    justify-content: space-between; /* Space them out */
+    align-items: center; /* Vertically align */
+    flex-shrink: 0; /* Prevent header from shrinking */
+}
+
+#inspector-panel #inspector-title {
+    margin: 0;
+    font-size: 1.1em; /* Adjust as needed */
+    color: var(--text-color-dark, #2c3e50);
+    display: flex; /* For icon and text alignment */
+    align-items: center;
+}
+
+/* Style for the device icon in the inspector title */
+#inspector-panel .inspector-title-icon {
+    width: 28px; /* Consistent icon size */
+    height: 28px;
+    margin-right: 8px;
+    flex-shrink: 0; /* Prevent icon from shrinking */
+}
+
+
+#inspector-panel #inspector-close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    padding: 0;
+    color: var(--text-color-medium, #888);
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+#inspector-panel #inspector-close-btn:hover {
+    color: var(--link-color-hover, #3498db);
+}
+
+#inspector-panel #inspector-content {
+    overflow-y: auto;
+    padding: 15px 20px;
+    flex-grow: 1; /* Allow content to grow and fill space */
+    font-size: 0.95em;
+    color: var(--text-color-dark, #333);
+}
+
+/* Common inspector list and detail styles (from LLDP map) */
+#inspector-panel .inspector-details-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+#inspector-panel .inspector-details-list li {
+    padding: 4px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start; /* Align text at top for multi-line values */
+}
+
+#inspector-panel .detail-label {
+    font-weight: 500;
+    color: var(--text-color-medium, #555);
+    flex-shrink: 0; /* Prevent label from shrinking */
+    margin-right: 15px;
+    white-space: nowrap; /* Keep label on one line */
+}
+
+#inspector-panel .detail-value {
+    color: var(--text-color-dark, #333);
+    text-align: right;
+    flex-grow: 1; /* Allow value to take up remaining space */
+    word-break: break-all; /* Break long words */
+}
+
+#inspector-panel h5 {
+    font-size: 1em;
+    margin: 20px 0 10px 0;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border-color-light, #eee);
+    color: var(--text-color-dark, #2c3e50);
+}
+
+/* Table styles for connections/FIBs */
+#inspector-panel table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    font-size: 0.9em;
+}
+
+#inspector-panel table th,
+#inspector-panel table td {
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color-light, #eee);
+}
+
+#inspector-panel table th {
+    background-color: var(--table-header-bg, #f8f8f8);
+    font-weight: 600;
+    color: var(--text-color-dark, #2c3e50);
+    white-space: nowrap;
+}
+
+#inspector-panel table tbody tr:nth-child(even) {
+    background-color: var(--table-row-even-bg, #f2f2f2);
+}
+
+#inspector-panel table tbody tr:hover {
+    background-color: var(--table-row-hover-bg, #e0e0e0);
+}
+
+/* Styling for grouped titles (e.g., "FIB Entries") */
+#inspector-panel .inspector-item {
+    margin-bottom: 15px; /* Space between logical items in content */
+}
+
+#inspector-panel .inspector-item h5 {
+    margin-top: 0; /* Override default h5 top margin */
+    margin-bottom: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border-color-light, #eee);
+}
+
+#inspector-panel .inspector-fibs-header { /* For smaller sub-headers like "FIB Entries" */
+    font-size: 0.95em;
+    font-weight: 600;
+    margin-top: 15px;
+    margin-bottom: 5px;
+    color: var(--text-color-dark, #2c3e50);
+}
+
+#inspector-panel .inspector-fibs-list {
+    list-style: disc; /* Use discs for FIBs */
+    padding-left: 20px;
+    margin: 5px 0;
+}
+#inspector-panel .inspector-fibs-list li {
+    padding: 2px 0;
+    display: list-item; /* Override flex if li elements are default flex */
+    text-align: left; /* Align text left */
+}
+
+/* Dark mode adjustments for inspector */
+html.dark-mode #inspector-panel {
+    background: var(--sidebar-bg-color-dark, #2d3748);
+    box-shadow: -4px 0 10px rgba(0, 0, 0, 0.4);
+}
+
+html.dark-mode #inspector-panel .modal-header {
+    border-bottom-color: var(--border-color-dark, #4a5568);
+}
+
+html.dark-mode #inspector-panel #inspector-title {
+    color: var(--text-color-dark-mode, #e2e8f0);
+}
+
+html.dark-mode #inspector-panel #inspector-close-btn {
+    color: var(--text-color-medium-dark-mode, #a0aec0);
+}
+
+html.dark-mode #inspector-panel #inspector-close-btn:hover {
+    color: var(--link-color-hover-dark, #63b3ed);
+}
+
+html.dark-mode #inspector-panel #inspector-content {
+    color: var(--text-color-dark-mode, #e2e8f0);
+}
+
+html.dark-mode #inspector-panel .detail-label {
+    color: var(--text-color-medium-dark-mode, #a0aec0);
+}
+
+html.dark-mode #inspector-panel .detail-value {
+    color: var(--text-color-dark-mode, #e2e8f0);
+}
+
+html.dark-mode #inspector-panel h5 {
+    border-bottom-color: var(--border-color-dark, #4a5568);
+    color: var(--text-color-dark-mode, #e2e8f0);
+}
+
+html.dark-mode #inspector-panel table th {
+    background-color: var(--table-header-bg-dark, #3b4555);
+    color: var(--text-color-dark-mode, #e2e8f0);
+    border-bottom-color: var(--border-color-dark, #4a5568);
+}
+
+html.dark-mode #inspector-panel table td {
+    border-bottom-color: var(--border-color-dark, #4a5568);
+}
+
+html.dark-mode #inspector-panel table tbody tr:nth-child(even) {
+    background-color: var(--table-row-even-bg-dark, #333d4c);
+}
+
+html.dark-mode #inspector-panel table tbody tr:hover {
+    background-color: var(--table-row-hover-bg-dark, #444e5f);
+}
+
+/* Inspector Overlay (to dim background and capture clicks) */
+#inspector-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4); /* Semi-transparent black */
+    z-index: 99; /* Below inspector-panel, above visualization */
+    opacity: 1;
+    transition: opacity 0.3s ease-in-out;
+}
+
+#inspector-overlay.hidden {
+    opacity: 0;
+    pointer-events: none; /* Allows clicks to pass through when hidden */
 }
 
 .modal-header { /* Shared by inspector and log modal */

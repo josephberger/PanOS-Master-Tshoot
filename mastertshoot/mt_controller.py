@@ -173,7 +173,7 @@ class MTController:
                 ).options(
                     joinedload(VirtualRouter.ngfw).subqueryload(Ngfw.virtual_routers), # Load sibling VRs
                     joinedload(VirtualRouter.interfaces).joinedload(Interface.ipv6_addresses),
-                    joinedload(VirtualRouter.interfaces).subqueryload(Interface.fib_entries) # Load FIBs per interface
+                    joinedload(VirtualRouter.interfaces).subqueryload(Interface.fib_entries)
                 ).first()
 
                 if not vr_obj:
@@ -181,7 +181,8 @@ class MTController:
                     return None
 
                 logging.info(f"Found match for {map_key}. Generating map data.")
-                map_data = self._generate_ui_map_for_vr(vr_obj, session)
+                # Pass the entire ngfw object to the helper, so it can extract the model
+                map_data = self._generate_ui_map_for_vr(vr_obj, session, vr_obj.ngfw) # Pass vr_obj.ngfw here
                 return map_data
 
         except sqlalchemy_exc.SQLAlchemyError as e:
@@ -216,10 +217,15 @@ class MTController:
     def _generate_ui_map_for_vr(self, vr_obj: VirtualRouter, session, parent_ngfw=None) -> dict:
         """
         Helper function to generate the D3.js JSON structure for a single VR object.
+        Added parent_ngfw to allow passing NGFW details like model.
         """
         vr_children = []
         zones = {}
         processed_fib_ids = set()
+
+        # Ensure parent_ngfw is available, fetch if not passed (e.g. for _generate_ui_map_for_vr directly)
+        if parent_ngfw is None and vr_obj.ngfw:
+            parent_ngfw = vr_obj.ngfw
 
         # 1. Group interfaces by security zone and collect their FIBs
         for iface_obj in vr_obj.interfaces:
@@ -246,8 +252,6 @@ class MTController:
         next_vr_groups = {}
         
         # Get all VR names on the same NGFW for validation
-        if parent_ngfw is None:
-            parent_ngfw = vr_obj.ngfw
         all_vr_names_on_ngfw = {vr.name for vr in parent_ngfw.virtual_routers}
 
         # Query all FIBs for this VR once
@@ -258,7 +262,6 @@ class MTController:
             if fib_obj.id in processed_fib_ids:
                 continue
 
-            # --- START: Corrected Logic ---
             # Check for drop routes by looking at the nexthop value
             if fib_obj.nexthop == 'drop':
                 drop_fibs.append(fib_obj.destination)
@@ -266,15 +269,12 @@ class MTController:
 
             # Check for next-vr routes by looking for a '/' in the interface name
             if fib_obj.interface and '/' in fib_obj.interface:
-                # The destination VR name is the part before the '/'
-                #dest_vr_candidate = fib_obj.interface.split('/')[0]
                 dest_vr_candidate = fib_obj.nexthop
                 # Validate that this is a real VR on the same firewall
                 if dest_vr_candidate in all_vr_names_on_ngfw:
                     if dest_vr_candidate not in next_vr_groups:
                         next_vr_groups[dest_vr_candidate] = []
                     next_vr_groups[dest_vr_candidate].append(fib_obj.destination)
-            # --- END: Corrected Logic ---
 
         # 3. Add the special nodes to the children list
         if drop_fibs:
@@ -287,7 +287,8 @@ class MTController:
         # 4. Construct the final map JSON structure
         return {
             "ngfw": {
-                "name": vr_obj.ngfw.hostname,
+                "name": parent_ngfw.hostname,
+                "model": parent_ngfw.model, # ADDED: NGFW model to the map data
                 "children": [{"name": vr_obj.name, "children": vr_children}]
             }
         }
@@ -483,7 +484,7 @@ class MTController:
 
         return filtered_maps if not map_key else filtered_maps.get(map_key)
     
-    # --- START: New Private Helper Method for LLDP Map Generation ---
+    # --- START: Modified Private Helper Method for LLDP Map Generation ---
     def _generate_ui_lldp_map_for_ngfw(self, ngfw_obj: Ngfw, session: Session) -> dict:
         """
         Helper function to generate the D3.js JSON structure for a single NGFW's
@@ -494,62 +495,65 @@ class MTController:
             session (Session): The active SQLAlchemy session.
 
         Returns:
-            dict: A dictionary containing the NGFW's hostname and a list of
-                  grouped unique neighbor nodes, or an empty list if no neighbors.
+            dict: A dictionary containing the NGFW's hostname, serial, model,
+                  and a list of grouped unique neighbor nodes, including specific
+                  connection details for the UI.
         """
         logging.debug(f"Generating LLDP map data for NGFW: {ngfw_obj.hostname}")
 
-        # Query all LLDP neighbors for this NGFW
-        lldp_entries = session.query(Neighbor).filter_by(ngfw_id=ngfw_obj.id).all() #
+        lldp_entries = session.query(Neighbor).filter_by(ngfw_id=ngfw_obj.id).all()
 
-        # Use defaultdict to group connections by remote_hostname
         temp_grouped = defaultdict(list)
         for entry in lldp_entries:
-            temp_grouped[entry.remote_hostname].append({ #
-                'local_interface': entry.local_interface, #
-                'remote_interface_id': entry.remote_interface_id, #
-                'remote_interface_description': entry.remote_interface_description, #
-                'remote_hostname': entry.remote_hostname #
+            temp_grouped[entry.remote_hostname].append({
+                'local_interface': entry.local_interface,
+                'remote_interface_id': entry.remote_interface_id,
+                'remote_interface_description': entry.remote_interface_description,
+                'ngfw_hostname': ngfw_obj.hostname,
+                # For single map view, the 'connected device' is always the neighbor
+                'connected_device_name': entry.remote_hostname,
+                'connected_device_type': 'remote_device' # Explicitly set type for consistency with global map
             })
 
-        # Convert defaultdict to the final list of unique neighbor nodes
         unique_neighbor_nodes = []
         for hostname, connections in temp_grouped.items():
             unique_neighbor_nodes.append({
-                'remote_hostname': hostname,
+                'remote_hostname': hostname, # This is the main identifier for the neighbor node
                 'connections': connections
             })
-        
-        # Sort unique neighbors by hostname for consistent rendering
+
         unique_neighbor_nodes.sort(key=lambda x: x['remote_hostname'])
 
         return {
             "ngfw_hostname": ngfw_obj.hostname,
-            "unique_neighbors": unique_neighbor_nodes
+            "ngfw_serial": ngfw_obj.serial_number,
+            "ngfw_model": ngfw_obj.model, # ADDED: NGFW model
+            "unique_neighbors": unique_neighbor_nodes,
         }
 
     # Public method for single NGFW LLDP map
     def get_lldp_map_for_ui(self, ngfw_hostname: str) -> dict | None:
-        """
-        Retrieves the grouped LLDP neighbor data for a specific NGFW,
-        formatted for UI visualization.
-        """
-        logging.info(f"API call to get_lldp_map_for_ui for NGFW: '{ngfw_hostname}'")
-        try:
-            with self._Session() as session:
-                ngfw_obj = session.query(Ngfw).filter_by(hostname=ngfw_hostname).first() 
-                if not ngfw_obj:
-                    logging.warning(f"NGFW '{ngfw_hostname}' not found for LLDP map generation.")
-                    return None
-                
-                return self._generate_ui_lldp_map_for_ngfw(ngfw_obj, session)
+            """
+            Retrieves the grouped LLDP neighbor data for a specific NGFW,
+            formatted for UI visualization.
+            """
+            logging.info(f"API call to get_lldp_map_for_ui for NGFW: '{ngfw_hostname}'")
+            try:
+                with self._Session() as session:
+                    ngfw_obj = session.query(Ngfw).filter_by(hostname=ngfw_hostname).first()
+                    if not ngfw_obj:
+                        logging.warning(f"NGFW '{ngfw_hostname}' not found for LLDP map generation.")
+                        return None
+                    
+                    # This call now gets the serial_number and correctly structured connections
+                    return self._generate_ui_lldp_map_for_ngfw(ngfw_obj, session)
 
-        except sqlalchemy_exc.SQLAlchemyError as e:
-            logging.error(f"Database error fetching LLDP map for NGFW '{ngfw_hostname}': {e}", exc_info=True)
-            raise MTControllerException(f"Database error fetching LLDP map for NGFW '{ngfw_hostname}': {e}")
-        except Exception as e:
-            logging.error(f"An unexpected error occurred in get_lldp_map_for_ui for NGFW '{ngfw_hostname}': {e}", exc_info=True)
-            raise MTControllerException(f"An unexpected error occurred for NGFW '{ngfw_hostname}': {e}")
+            except sqlalchemy_exc.SQLAlchemyError as e:
+                logging.error(f"Database error fetching LLDP map for NGFW '{ngfw_hostname}': {e}", exc_info=True)
+                raise MTControllerException(f"Database error fetching LLDP map for NGFW '{ngfw_hostname}': {e}")
+            except Exception as e:
+                logging.error(f"An unexpected error occurred in get_lldp_map_for_ui for NGFW '{ngfw_hostname}': {e}", exc_info=True)
+                raise MTControllerException(f"An unexpected error occurred for NGFW '{ngfw_hostname}': {e}")
 
     # --- START: Modified Private Helper for Global LLDP Map Generation ---
     def _generate_global_lldp_graph_data(self, session: Session) -> dict:
@@ -595,7 +599,8 @@ class MTController:
                     "label": ngfw_obj.hostname, # NGFWs display their full hostname (no truncation)
                     "serial_number": ngfw_obj.serial_number,
                     "type": "ngfw",
-                    "locked": False, # <<< ADDED: Initial locked state
+                    "locked": False,
+                     "model": ngfw_obj.model # <<< ADDED: Initial locked state
                 }
                 ngfw_nodes_added.add(ngfw_obj.hostname) 
 
@@ -653,7 +658,63 @@ class MTController:
         except Exception as e:
             logging.error(f"An unexpected error occurred in get_global_lldp_map_for_ui: {e}", exc_info=True)
             raise MTControllerException(f"An unexpected error occurred in get_global_lldp_map_for_ui: {e}")
-    
+
+    def add_manual_lldp_neighbor(self, ngfw_hostname: str, local_interface: str,
+                                 remote_hostname: str, remote_interface_id: str,
+                                 remote_interface_description: str) -> str:
+        """
+        Adds a new manual LLDP neighbor entry to the database.
+
+        Performs validation for required fields and uniqueness of local_interface
+        on the specified NGFW.
+
+        Args:
+            ngfw_hostname (str): Hostname of the NGFW this neighbor is connected to.
+            local_interface (str): The local NGFW interface connected to the neighbor.
+            remote_hostname (str): Hostname of the remote LLDP neighbor.
+            remote_interface_id (str): Remote device's interface ID (e.g., "Gi0/1").
+            remote_interface_description (str): Description of the remote interface.
+
+        Returns:
+            str: A success message.
+
+        Raises:
+            MTControllerException: If any required field is missing, NGFW is not found,
+                                   or the local_interface is already in use by another
+                                   LLDP neighbor for that NGFW.
+        """
+        if not all([ngfw_hostname, local_interface, remote_hostname, remote_interface_id, remote_interface_description]):
+            raise MTControllerException("All fields are required to add a manual LLDP neighbor.")
+
+        with self._Session() as session:
+            # 1. Find the NGFW by hostname
+            ngfw_obj = session.query(Ngfw).filter_by(hostname=ngfw_hostname).first()
+            if not ngfw_obj:
+                raise MTControllerException(f"NGFW '{ngfw_hostname}' not found in the database. Please add it first.")
+
+            # 2. Check for uniqueness of local_interface for this NGFW
+            # An NGFW's local_interface should only have ONE LLDP neighbor (even if manual)
+            existing_neighbor = session.query(Neighbor).filter(
+                Neighbor.ngfw_id == ngfw_obj.id,
+                Neighbor.local_interface == local_interface
+            ).first()
+
+            if existing_neighbor:
+                raise MTControllerException(f"Local interface '{local_interface}' on NGFW '{ngfw_hostname}' is already associated with an LLDP neighbor ('{existing_neighbor.remote_hostname}').")
+
+            # 3. Create and add the new Neighbor object
+            new_neighbor = Neighbor(
+                ngfw_id=ngfw_obj.id,
+                local_interface=local_interface,
+                remote_hostname=remote_hostname,
+                remote_interface_id=remote_interface_id,
+                remote_interface_description=remote_interface_description
+            )
+            session.add(new_neighbor)
+            session.commit()
+
+            return f"Manual LLDP neighbor '{remote_hostname}' on '{ngfw_hostname}' ({local_interface}) added successfully."
+ 
     # ==========================================================================
     # Internal API Fetch Helper Methods
     # ==========================================================================

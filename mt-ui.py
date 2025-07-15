@@ -285,8 +285,6 @@ def start_device_action_task():
     
     return jsonify({"message": f"Task '{task_type}' started for {platform} {filter_value}", "task_id": task_id}), 202
 
-# In mt-ui.py, add these new endpoints
-
 @app.route('/api/inventory/count', methods=['GET'])
 def get_inventory_count():
     """Returns the current count of NGFWs in the database."""
@@ -600,6 +598,32 @@ def get_single_lldp_map_data(ngfw_hostname):
     except MTControllerException as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/api/lldp-neighbor/add', methods=['POST'])
+def add_lldp_neighbor():
+    """
+    API endpoint to add a manual LLDP neighbor entry.
+    """
+    if not controller:
+        return jsonify({"error": "Controller not available"}), 503
+
+    data = request.get_json()
+    ngfw_hostname = data.get('ngfw_hostname')
+    local_interface = data.get('local_interface')
+    remote_hostname = data.get('remote_hostname')
+    remote_interface_id = data.get('remote_interface_id')
+    remote_interface_description = data.get('remote_interface_description')
+
+    try:
+        message = controller.add_manual_lldp_neighbor(
+            ngfw_hostname, local_interface, remote_hostname,
+            remote_interface_id, remote_interface_description
+        )
+        return jsonify({"message": message}), 201 # 201 Created
+    except MTControllerException as e:
+        return jsonify({"error": str(e)}), 400 # 400 Bad Request for validation errors
+    except Exception as e:
+        logging.error(f"Error adding manual LLDP neighbor: {e}", exc_info=True)
+        return jsonify({"error": "An unexpected error occurred while adding the neighbor."}), 500
 
 if __name__ == '__main__':
     # Add a final check before running the app

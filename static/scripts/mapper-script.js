@@ -1,5 +1,41 @@
 // static/scripts/mapper-script.js
 
+// --- Constants for NGFW Icons (Copied from device-manager.js, placed in global scope) ---
+const NGFW_EXACT_ICON_MAP = {
+    'pa-440': '/static/images/pa-440.svg',
+    'pa-5450': '/static/images/pa-5450.svg',
+    'pa-7050': '/static/images/pa-7050.svg',
+    'pa-vm': '/static/images/pa-vm.svg',
+};
+
+const NGFW_SERIES_ICON_MAP = {
+    'pa-2': '/static/images/pa-200.svg',
+    'pa-8': '/static/images/pa-800.svg',
+    'pa-34': '/static/images/pa-3400.svg',
+    'pa-52': '/static/images/pa-5200.svg',
+};
+
+const getIconPath = (platform, model) => {
+    if (platform === 'panorama') { // While not used in Mapper, kept for consistency
+        return '/static/images/panorama.svg';
+    }
+
+    if (platform === 'ngfw' && model) {
+        const lowerModel = model.toLowerCase();
+        if (NGFW_EXACT_ICON_MAP[lowerModel]) {
+            return NGFW_EXACT_ICON_MAP[lowerModel];
+        }
+        for (const prefix in NGFW_SERIES_ICON_MAP) {
+            if (lowerModel.startsWith(prefix)) {
+                return NGFW_SERIES_ICON_MAP[prefix];
+            }
+        }
+        return '/static/images/ngfw.svg'; // Default NGFW icon if no specific match
+    }
+    return '/static/images/ngfw.svg'; // Fallback for NGFW
+};
+
+
 document.addEventListener('DOMContentLoaded', () => {
     // --- Global Constants and Initial Setup ---
     const svg = d3.select("#visualization").append("svg");
@@ -12,16 +48,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const resetViewBtn = document.getElementById('resetViewBtn');
     const loadAllBtn = document.getElementById('loadAllBtn');
     const exportSvgBtn = document.getElementById('exportSvgBtn'); 
-    // controlsHeader event listener is now handled by global.js
-    // const controls = document.querySelector('.controls'); 
-    // const controlsHeader = document.getElementById('controls-header');
-    const logModal = document.getElementById('task-log-modal');
-    const logOutput = document.getElementById('log-output');
-    const closeLogBtn = document.getElementById('close-log-btn');
-    const inspectorCloseBtn = document.getElementById('inspector-close-btn');
     const mapTraceForm = document.getElementById('map-trace-form');
-
-    let eventSource = null;
+    // Inspector elements
+    const inspectorPanel = document.getElementById('inspector-panel'); 
+    const inspectorCloseBtn = document.getElementById('inspector-close-btn');
+    // REMOVED: const inspectorOverlay = document.getElementById('inspector-overlay'); // This line caused the redeclaration error
 
     // --- D3 Zoom Setup ---
     const zoom = d3.zoom().scaleExtent([0.05, 4]).on("zoom", (event) => {
@@ -53,13 +84,15 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log("Dropdown populated.");
         } catch (error) {
             console.error("Failed to populate dropdown:", error);
-            alert("Could not load map list from server.");
+            window.showAppModal("Could not load map list from server.");
         }
     }
 
     async function loadAndDrawSingleMap(key) {
         if (!key) {
             mapGroup.selectAll("*").remove();
+            // Ensure inspector is closed if no map is loaded
+            window.hideInspector();
             return;
         }
         console.log(`Fetching single map: ${key}`);
@@ -68,16 +101,20 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error(`API Error: ${response.statusText}`);
             const mapData = await response.json();
             if (!mapData) {
-                alert(`Map data for ${key} is empty or not found.`);
+                window.showAppModal(`Map data for ${key} is empty or not found.`);
+                window.hideInspector();
                 return;
             }
             mapGroup.selectAll("*").remove();
             const viz = document.getElementById('visualization');
             drawSingleMap(mapData, mapGroup, viz.clientWidth / 2, viz.clientHeight / 2);
             svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
+            // After loading a new map, close any open inspector
+            window.hideInspector();
         } catch (error) {
             console.error("Failed to load single map:", error);
-            alert(`Could not load map for ${key}.`);
+            window.showAppModal(`Could not load map for ${key}.`);
+            window.hideInspector();
         }
     }
 
@@ -90,61 +127,56 @@ document.addEventListener('DOMContentLoaded', () => {
             mapGroup.selectAll("*").remove();
             const mapKeys = Object.keys(allMapsData);
             if (mapKeys.length === 0) {
-                alert("No saved maps found to display.");
+                window.showAppModal("No saved maps found to display.");
+                window.hideInspector();
                 return;
             }
             drawAllMaps(allMapsData);
             svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
+            // After loading all maps, close any open inspector
+            window.hideInspector();
         } catch (error) {
             console.error("Failed to load all maps:", error);
-            alert("Could not load all maps from server.");
+            window.showAppModal("Could not load all maps from server.");
+            window.hideInspector();
         }
     }
     
     // --- Task Management and Log Modal Logic ---
-    function showLogModal() {
-        logOutput.textContent = 'Initializing task...';
-        logModal.style.display = 'flex';
-    }
 
-    function closeLogModal() {
-        logModal.style.display = 'none';
-        if (eventSource) {
-            eventSource.close();
-            eventSource = null;
-        }
-    }
-
+    // Function to start a task, now using global showLogModal
     async function startTask(startUrl) {
-        showLogModal();
+        window.showLogModal();
         try {
             const startResponse = await fetch(startUrl, { method: 'POST' });
             if (!startResponse.ok) throw new Error(`Failed to start task: ${startResponse.statusText}`);
             const data = await startResponse.json();
-            logOutput.textContent = `Task started with ID: ${data.task_id}\nConnecting to log stream...\n\n`;
+            document.getElementById('log-output').textContent = `Task started with ID: ${data.task_id}\nConnecting to log stream...\n\n`;
             connectToStream(data.task_id);
         } catch (error) {
-            logOutput.textContent += `\n\nERROR: Could not start task.\n${error.message}`;
+            document.getElementById('log-output').textContent += `\n\nERROR: Could not start task.\n${error.message}`;
         }
     }
 
+    // Connect to stream, now using window.globalEventSource
     function connectToStream(taskId) {
-        if (eventSource) eventSource.close();
-        eventSource = new EventSource(`/api/tasks/stream/${taskId}`);
-        eventSource.onopen = () => logOutput.textContent += 'Connection to log stream established.\n----------------------------------------\n';
-        eventSource.onmessage = (event) => {
+        if (window.globalEventSource) window.globalEventSource.close();
+        window.globalEventSource = new EventSource(`/api/tasks/stream/${taskId}`);
+        window.globalEventSource.onopen = () => document.getElementById('log-output').textContent += 'Connection to log stream established.\n----------------------------------------\n';
+        window.globalEventSource.onmessage = (event) => {
+            const logOutput = document.getElementById('log-output');
             logOutput.textContent += event.data + '\n';
-            logOutput.parentElement.scrollTop = logOutput.parentElement.scrollHeight;
+            if (logOutput.parentElement) logOutput.parentElement.scrollTop = logOutput.parentElement.scrollHeight;
             if (event.data.includes('--- TASK')) {
-                eventSource.close();
-                eventSource = null;
+                window.globalEventSource.close();
+                window.globalEventSource = null;
                 populateDropdown();
             }
         };
-        eventSource.onerror = () => {
-            logOutput.textContent += '\n----------------------------------------\nConnection to log stream lost.';
-            eventSource.close();
-            eventSource = null;
+        window.globalEventSource.onerror = () => {
+            document.getElementById('log-output').textContent += '\n----------------------------------------\nConnection to log stream lost.';
+            if (window.globalEventSource) window.globalEventSource.close();
+            window.globalEventSource = null;
         };
     }
 
@@ -154,7 +186,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const srcIp = document.getElementById('map-src-ip-input').value;
         const dstIp = document.getElementById('map-dst-ip-input').value;
         if (!srcIp || !dstIp) {
-            alert('Please enter both a source and destination IP address.');
+            window.showAppModal('Please enter both a source and destination IP address.');
             return;
         }
 
@@ -167,89 +199,139 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(url);
             const data = await response.json();
-            if (!response.ok) throw new Error(data.error || 'Path trace failed.');
+            if (!response.ok) {
+                window.showAppModal(data.error || 'Path trace failed.');
+                throw new Error(data.error || 'Path trace failed.');
+            }
             
             mapGroup.selectAll("*").remove();
+            const viz = document.getElementById('visualization');
             if (currentMapKey) {
-                drawSingleMap(data, mapGroup, svg.clientWidth / 2, svg.clientHeight / 2); // Pass actual svg dimensions
+                drawSingleMap(data, mapGroup, viz.clientWidth / 2, viz.clientHeight / 2);
             } else {
                 drawAllMaps(data);
             }
             svg.transition().duration(750).call(zoom.transform, d3.zoomIdentity);
+            window.hideInspector();
         } catch (error) {
-            alert(`Error tracing path: ${error.message}`);
             console.error('Map trace error:', error);
+            window.hideInspector();
         }
     }
 
     // --- UI and Drawing Functions ---
-    // These drawing functions remain in mapper-script.js as they are specific to this page's map structure
     
-    function showInspector(nodeData) {
-        document.getElementById('main-controls').style.display = 'none';
-        const panel = document.getElementById('inspector-panel');
-        panel.style.display = 'block';
-        const title = document.getElementById('inspector-title');
+    // MODIFIED: showInspector to match LLDP map panel
+    window.showInspector = function(nodeData) { // Make this a window global function
+        const inspectorOverlay = document.getElementById('inspector-overlay'); // Re-declare locally for use in this function
+
+        if (inspectorPanel) {
+            inspectorPanel.classList.add('inspector-open');
+        }
+        if (inspectorOverlay) {
+            inspectorOverlay.classList.remove('hidden');
+        }
+        
+        window.activeInspectorNode = nodeData; 
+
+        const titleElement = document.getElementById('inspector-title');
         const content = document.getElementById('inspector-content');
-        content.innerHTML = ''; // Clear previous content
+        content.innerHTML = ''; 
+
+        const detailsList = document.createElement('ul');
+        detailsList.className = 'inspector-details-list';
+        let detailsHtml = '';
+
+        // Add NGFW Name and VR Name at the top for clarity (always present for map nodes)
+        const ngfwName = nodeData.ngfw_name || 'N/A';
+        const vrName = nodeData.virtual_router_name || 'N/A';
+        const model = nodeData.model || 'N/A'; // Get model for icon
+
+        const iconPath = getIconPath('ngfw', model);
+        titleElement.innerHTML = `<img src="${iconPath}" class="device-icon inspector-title-icon" alt="${model} Icon"> ${ngfwName}`;
+
+        detailsHtml += `<li><span class="detail-label">NGFW:</span><span class="detail-value">${ngfwName}</span></li>`;
+        detailsHtml += `<li><span class="detail-label">Virtual Router:</span><span class="detail-value">${vrName}</span></li>`;
+        detailsHtml += `<li><span class="detail-label">Model:</span><span class="detail-value">${model}</span></li>`;
+        detailsHtml += `<hr class="section-divider">`;
 
         if (nodeData.type === 'zone') {
-            title.textContent = `Zone: ${nodeData.name}`;
-            (nodeData.interfaces || []).forEach(iface => {
-                const item = document.createElement('div');
-                item.className = 'inspector-item';
+            detailsHtml += `<li><span class="detail-label">Type:</span><span class="detail-value">Zone</span></li>`;
+            detailsHtml += `<li><span class="detail-label">Name:</span><span class="detail-value">${nodeData.name}</span></li>`;
+            
+            if (nodeData.interfaces && nodeData.interfaces.length > 0) {
+                detailsHtml += `<h5>Interfaces:</h5>`;
+                detailsHtml += `<table><thead><tr><th>Name</th><th>IP</th><th>Tag</th><th>IPv6</th></tr></thead><tbody>`;
+                nodeData.interfaces.forEach(iface => {
+                    const ipv6Addrs = (iface.ipv6_addresses && iface.ipv6_addresses.length > 0) ? iface.ipv6_addresses.join('<br>') : 'N/A';
+                    detailsHtml += `<tr><td>${iface.name}</td><td>${iface.ip || 'N/A'}</td><td>${iface.tag || 'N/A'}</td><td>${ipv6Addrs}</td></tr>`;
+                });
+                detailsHtml += `</tbody></table>`;
+            } else {
+                detailsHtml += `<li><span class="detail-value">No interfaces in this zone.</span></li>`;
+            }
 
-                // Interface Name Sub-header
-                const ifaceHeader = document.createElement('h5');
-                ifaceHeader.textContent = iface.name;
-                item.appendChild(ifaceHeader);
+            const allZoneFibs = (nodeData.interfaces || []).flatMap(iface => iface.fibs || []);
+            if (allZoneFibs.length > 0) {
+                detailsHtml += `<h5 class="inspector-fibs-header">FIB Entries in Zone:</h5>`;
+                detailsHtml += `<ul class="inspector-fibs-list">`;
+                allZoneFibs.forEach(f => detailsHtml += `<li>${f}</li>`);
+                detailsHtml += `</ul>`;
+            }
 
-                // Details List for IP, Tag, etc.
-                const detailsList = document.createElement('ul');
-                detailsList.className = 'inspector-details-list';
-                
-                let detailsHtml = '';
-                if (iface.ip) {
-                    detailsHtml += `<li><span class="detail-label">IP Address:</span><span class="detail-value">${iface.ip}</span></li>`;
-                }
-                if (iface.tag) {
-                    detailsHtml += `<li><span class="detail-label">Tag:</span><span class="detail-value">${iface.tag}</span></li>`;
-                }
-                if (iface.ipv6_addresses && iface.ipv6_addresses.length > 0) {
-                    const ipv6Html = iface.ipv6_addresses.join('<br>');
-                    detailsHtml += `<li><span class="detail-label">IPv6:</span><span class="detail-value">${ipv6Html}</span></li>`;
-                }
-                detailsList.innerHTML = detailsHtml;
-                item.appendChild(detailsList);
 
-                // FIBs List (if any)
-                if (iface.fibs && iface.fibs.length > 0) {
-                    const fibsHeader = document.createElement('h6');
-                    fibsHeader.className = 'inspector-fibs-header';
-                    fibsHeader.textContent = 'FIB Entries';
-                    item.appendChild(fibsHeader);
-
-                    const fibsList = document.createElement('ul');
-                    fibsList.className = 'inspector-fibs-list';
-                    fibsList.innerHTML = iface.fibs.map(f => `<li>${f}</li>`).join('');
-                    item.appendChild(fibsList);
-                }
-                content.appendChild(item);
-            });
-        } else { // Fallback for other node types like 'drop' or 'nextvr'
-            title.textContent = nodeData.name;
+        } else if (nodeData.type === 'drop') {
+            detailsHtml += `<li><span class="detail-label">Type:</span><span class="detail-value">Drop Route</span></li>`;
+            detailsHtml += `<li><span class="detail-label">Name:</span><span class="detail-value">${nodeData.name}</span></li>`;
             if (nodeData.fibs && nodeData.fibs.length > 0) {
-                const fibsList = document.createElement('ul');
-                fibsList.className = 'inspector-fibs-list'; // Re-use class
-                fibsList.innerHTML = nodeData.fibs.map(f => `<li>${f}</li>`).join('');
-                content.appendChild(fibsList);
+                detailsHtml += `<h5>Dropped Destinations:</h5>`;
+                detailsHtml += `<ul class="inspector-fibs-list">`;
+                nodeData.fibs.forEach(f => detailsHtml += `<li>${f}</li>`);
+                detailsHtml += `</ul>`;
+            }
+
+        } else if (nodeData.type === 'next-vr') {
+            detailsHtml += `<li><span class="detail-label">Type:</span><span class="detail-value">Next Virtual Router</span></li>`;
+            detailsHtml += `<li><span class="detail-label">Next VR:</span><span class="detail-value">${nodeData.name}</span></li>`;
+            if (nodeData.fibs && nodeData.fibs.length > 0) {
+                detailsHtml += `<h5>Destinations Routed to Next VR:</h5>`;
+                detailsHtml += `<ul class="inspector-fibs-list">`;
+                nodeData.fibs.forEach(f => detailsHtml += `<li>${f}</li>`);
+                detailsHtml += `</ul>`;
             }
         }
+        if (nodeData.trace_type) {
+            detailsHtml += `<hr class="section-divider">`;
+            detailsHtml += `<li><span class="detail-label">Trace Type:</span><span class="detail-value">${nodeData.trace_type.toUpperCase()}</span></li>`;
+            if (nodeData.interface_name) {
+                detailsHtml += `<li><span class="detail-label">Interface:</span><span class="detail-value">${nodeData.interface_name}</span></li>`;
+            }
+            if (nodeData.destination) {
+                detailsHtml += `<li><span class="detail-label">Destination:</span><span class="detail-value">${nodeData.destination}</span></li>`;
+            }
+            if (nodeData.nexthop) {
+                detailsHtml += `<li><span class="detail-label">Next-Hop:</span><span class="detail-value">${nodeData.nexthop}</span></li>`;
+            }
+            if (nodeData.flags) {
+                detailsHtml += `<li><span class="detail-label">Flags:</span><span class="detail-value">${nodeData.flags}</span></li>`;
+            }
+        }
+
+
+        detailsList.innerHTML = detailsHtml;
+        content.appendChild(detailsList);
+        content.style.maxHeight = 'calc(100vh - 150px)';
+        content.style.overflowY = 'auto';
     }
 
-    function hideInspector() {
-        document.getElementById('inspector-panel').style.display = 'none';
-        document.getElementById('main-controls').style.display = 'block';
+    // MODIFIED: hideInspector to match LLDP map panel
+    window.hideInspector = function() { // Make this a window global function
+        const inspectorOverlay = document.getElementById('inspector-overlay'); // Re-declare locally for use in this function
+
+        if (inspectorPanel) inspectorPanel.classList.remove('inspector-open');
+        if (inspectorOverlay) {
+            inspectorOverlay.classList.add('hidden');
+        }
     }
     
     function drawAllMaps(allMapsData) {
@@ -264,14 +346,30 @@ document.addEventListener('DOMContentLoaded', () => {
             const centerX = col * (mapWidth + padding) + (mapWidth / 2);
             const centerY = row * (mapHeight + padding) + (mapHeight / 2);
             const container = mapGroup.append("g");
+            
+            // Extract NGFW and VR names from the mapData
+            const ngfwName = mapData.ngfw?.name || 'Unknown NGFW';
+            const vrName = mapData.ngfw?.children?.[0]?.name || 'Unknown VR';
+            const model = mapData.ngfw?.model || 'Unknown'; // Assuming model is available at mapData.ngfw.model
+            
+            // Add NGFW/VR info to each node's datum so showInspector can access it
+            // This is crucial for adding NGFW/VR context to the inspector panel
+            const nodesWithContext = mapData.ngfw.children[0].children.map(node => ({
+                ...node,
+                ngfw_name: ngfwName,
+                virtual_router_name: vrName,
+                model: model // Pass model from the NGFW data
+            }));
+
             container.append("text").attr("class", "map-title").attr("x", centerX).attr("y", centerY - 400).text(key);
-            drawSingleMap(mapData, container, centerX, centerY);
+            // Pass the modified nodesWithContext to drawSingleMapInternal
+            drawSingleMapInternal(ngfwName, vrName, nodesWithContext, container, centerX, centerY);
         });
     }
 
-    function drawSingleMap(data, parentGroup, centerX, centerY) {
-        if (!data || !data.ngfw || !data.ngfw.children || !data.ngfw.children[0]) return;
-        const nodes = data.ngfw.children[0].children || [];
+    // Helper function for drawing a single map's nodes and links, now takes nodes directly
+    // and also the NGFW and VR names to pass to the inspector.
+    function drawSingleMapInternal(ngfwDisplayName, vrDisplayName, nodes, parentGroup, centerX, centerY) {
         const nodesPerRing = 20, ringPadding = 180, nodeWidth = 140, nodePadding = 40, minBaseRadius = 250;
         const numRings = Math.ceil(nodes.length / nodesPerRing) || 1;
         const ringRadii = [];
@@ -290,8 +388,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const nodeRadius = ringRadii[ringIndex];
             const angle = (indexInRing / nodesInThisRing) * 2 * Math.PI - (Math.PI / 2);
             const boxX = centerX + nodeRadius * Math.cos(angle), boxY = centerY + nodeRadius * Math.sin(angle);
-            linkGroup.append("line").attr("class", "link").attr("x1", centerX).attr("y1", centerY).attr("x2", boxX).attr("y2", boxY);
             
+            // Only draw links if a trace is present AND if it's not a drop node (which won't have a direct link)
+            if (node.trace_type && node.type !== 'drop') {
+                 linkGroup.append("line").attr("class", `link trace-link trace-${node.trace_type}`).attr("x1", centerX).attr("y1", centerY).attr("x2", boxX).attr("y2", boxY);
+            }
+            else if (!node.trace_type) { // Draw regular links if no trace is active
+                 linkGroup.append("line").attr("class", "link").attr("x1", centerX).attr("y1", centerY).attr("x2", boxX).attr("y2", boxY);
+            }
+
+            // Draw trace nodes
             if (node.trace_type) {
                 const traceGroup = nodeGroup.append("g")
                     .attr("class", `trace-node trace-${node.trace_type}`)
@@ -308,17 +414,19 @@ document.addEventListener('DOMContentLoaded', () => {
                     ].map(p => `${p.x},${p.y}`).join(' ');
                     traceGroup.append('polygon').attr('points', octagonPoints);
                 } else {
-                    const size = 1800;
+                    const size = 1800; // Size for the star symbol
                     const star = d3.symbol().type(d3.symbolStar).size(size);
-                    if (node.trace_type === 'ingress') traceGroup.append('path').attr('d', star);
+                    if (node.trace_type === 'ingress') {
+                        traceGroup.append('path').attr('class', 'trace-symbol').attr('d', star);
+                    }
                     else if (node.trace_type === 'egress') {
-                        traceGroup.append('circle').attr('class', 'target-outer').attr('r', 45);
-                        traceGroup.append('circle').attr('class', 'target-middle').attr('r', 30);
-                        traceGroup.append('circle').attr('class', 'target-inner').attr('r', 15);
+                        traceGroup.append('circle').attr('class', 'target-outer trace-symbol').attr('r', 45);
+                        traceGroup.append('circle').attr('class', 'target-middle trace-symbol').attr('r', 30);
+                        traceGroup.append('circle').attr('class', 'target-inner trace-symbol').attr('r', 15);
                     } else if (node.trace_type === 'ingress-egress') {
-                        traceGroup.append('circle').attr("class", 'target-outer').attr('r', 45);
-                        traceGroup.append('circle').attr("class", 'target-middle').attr('r', 30);
-                        traceGroup.append('path').attr("class", 'star-overlay').attr('d', d3.symbol().type(d3.symbolStar).size(size * 0.8));
+                        traceGroup.append('circle').attr("class", 'target-outer trace-symbol').attr('r', 45);
+                        traceGroup.append('circle').attr("class", 'target-middle trace-symbol').attr('r', 30);
+                        traceGroup.append('path').attr("class", 'star-overlay trace-symbol').attr('d', d3.symbol().type(d3.symbolStar).size(size * 0.8));
                     }
                 }
 
@@ -341,9 +449,10 @@ document.addEventListener('DOMContentLoaded', () => {
                         .attr("dy", "1.1em")
                         .text(node.interface_name);
                 }
-            } else {
+            } else { // Draw regular nodes
+                // Each node already has ngfw_name, virtual_router_name, and model from drawAllMaps
                 const dataGroup = nodeGroup.append("g").attr("class", "data-group").datum(node).attr("transform", `translate(${boxX}, ${boxY})`);
-                dataGroup.on("click", (event, d) => showInspector(d));
+                dataGroup.on("click", (event, d) => window.showInspector(d)); // Call global showInspector
                 const rect = dataGroup.append("rect").attr("rx", 5);
                 const label = dataGroup.append("text").attr("text-anchor", "middle");
                 if (node.type === 'zone') {
@@ -366,10 +475,28 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         const ngfwGroup = centerGroup.append("g").attr("transform", `translate(${centerX}, ${centerY})`);
         ngfwGroup.append("rect").attr("class", "ngfw-container").attr("width", 300).attr("height", 200).attr("x", -150).attr("y", -100).attr("rx", 10);
-        ngfwGroup.append("text").attr("class", "ngfw-label").text(data.ngfw.name).attr("text-anchor", "middle").attr("dy", -80);
+        ngfwGroup.append("text").attr("class", "ngfw-label").text(ngfwDisplayName).attr("text-anchor", "middle").attr("dy", -80);
         const vrGroup = ngfwGroup.append("g");
         vrGroup.append("circle").attr("class", "vr-circle").attr("r", 50);
-        vrGroup.append("text").attr("class", "vr-label").text(data.ngfw.children[0].name).attr("text-anchor", "middle").attr("dy", "0.3em");
+        vrGroup.append("text").attr("class", "vr-label").text(vrDisplayName).attr("text-anchor", "middle").attr("dy", "0.3em");
+    }
+
+    // New wrapper for drawSingleMap (called by loadAndDrawSingleMap directly)
+    // This extracts necessary info and calls drawSingleMapInternal
+    function drawSingleMap(mapData, parentGroup, centerX, centerY) {
+        if (!mapData || !mapData.ngfw || !mapData.ngfw.children || !mapData.ngfw.children[0]) return;
+        const ngfwName = mapData.ngfw.name || 'Unknown NGFW';
+        const vrName = mapData.ngfw.children[0].name || 'Unknown VR';
+        const model = mapData.ngfw.model || 'Unknown'; // Assuming model is available here
+
+        // Add NGFW/VR/Model context to each node
+        const nodesWithContext = mapData.ngfw.children[0].children.map(node => ({
+            ...node,
+            ngfw_name: ngfwName,
+            virtual_router_name: vrName,
+            model: model // Pass model from mapData
+        }));
+        drawSingleMapInternal(ngfwName, vrName, nodesWithContext, parentGroup, centerX, centerY);
     }
 
     function handleSearch(event) {
@@ -382,7 +509,7 @@ document.addEventListener('DOMContentLoaded', () => {
         allGroups.classed("faded", true).classed("highlight", false);
         d3.selectAll(".data-group, .trace-node").each(function(d) {
             if (!d) return;
-            let searchableContent = [d.name, d.interface_name];
+            let searchableContent = [d.name, d.interface_name, d.ngfw_name, d.virtual_router_name]; // Add NGFW/VR to search
             if (d.type === 'zone') {
                 (d.interfaces || []).forEach(iface => {
                     searchableContent.push(iface.name, iface.ip, String(iface.tag));
@@ -394,6 +521,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             if (searchableContent.some(c => c && String(c).toLowerCase().includes(searchTerm))) {
                 d3.select(this).classed("faded", false).classed("highlight", true);
+                // Also highlight the map title (VR) if any of its nodes match
                 d3.select(this.parentNode).selectAll('.map-title').classed("faded", false);
             }
         });
@@ -401,7 +529,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Attach Event Listeners ---
     // controlsHeader.addEventListener is now handled by global.js
-    // controlsHeader.addEventListener('click', () => { ... });
 
     resetViewBtn.addEventListener('click', () => {
         document.getElementById('map-trace-form').reset();
@@ -411,14 +538,14 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('map-trace-form').reset();
         loadAndDrawAllMaps();
     });
-    inspectorCloseBtn.addEventListener('click', hideInspector);
+    inspectorCloseBtn.addEventListener('click', window.hideInspector);
     searchInput.addEventListener('input', handleSearch);
     vrSelector.addEventListener('change', (event) => {
         document.getElementById('map-trace-form').reset();
-        hideInspector();
+        window.hideInspector();
         loadAndDrawSingleMap(event.target.value);
     });
-    closeLogBtn.addEventListener('click', closeLogModal);
+    // closeLogBtn listener is now handled by global.js
     mapTraceForm.addEventListener('submit', handleMapPathTrace);
     
     // MODIFIED: exportSvgBtn to call the global function
@@ -436,4 +563,10 @@ document.addEventListener('DOMContentLoaded', () => {
     svg.call(zoom);
     window.addEventListener('resize', setupSvgSize);
     populateDropdown();
+
+    // Attach inspector overlay listener globally
+    const inspectorOverlay = document.getElementById('inspector-overlay'); // Re-declare locally for use in this event listener
+    if (inspectorOverlay) {
+        inspectorOverlay.addEventListener('click', window.hideInspector);
+    }
 });

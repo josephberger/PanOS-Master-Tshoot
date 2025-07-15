@@ -29,57 +29,57 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Core Functions ---
     // showAppModal remains here as it's a specific type of modal for this page's interactions
-    function showAppModal(message, isConfirm = false, onConfirm = null) {
-        const existingModal = document.querySelector('.app-modal-backdrop');
-        if (existingModal) existingModal.remove();
+    // function showAppModal(message, isConfirm = false, onConfirm = null) {
+    //     const existingModal = document.querySelector('.app-modal-backdrop');
+    //     if (existingModal) existingModal.remove();
 
-        const modalBackdrop = document.createElement('div');
-        modalBackdrop.className = 'modal-backdrop app-modal-backdrop';
+    //     const modalBackdrop = document.createElement('div');
+    //     modalBackdrop.className = 'modal-backdrop app-modal-backdrop';
 
-        const modalContent = document.createElement('div');
-        modalContent.className = 'modal-content';
-        modalContent.style.maxWidth = '450px';
+    //     const modalContent = document.createElement('div');
+    //     modalContent.className = 'modal-content';
+    //     modalContent.style.maxWidth = '450px';
 
-        const modalBody = document.createElement('div');
-        modalBody.className = 'modal-body';
-        modalBody.style.padding = '25px';
-        modalBody.style.fontSize = '16px';
-        modalBody.style.textAlign = 'center';
-        modalBody.textContent = message;
+    //     const modalBody = document.createElement('div');
+    //     modalBody.className = 'modal-body';
+    //     modalBody.style.padding = '25px';
+    //     modalBody.style.fontSize = '16px';
+    //     modalBody.style.textAlign = 'center';
+    //     modalBody.textContent = message;
 
-        const modalFooter = document.createElement('div');
-        modalFooter.style.cssText = 'padding: 15px; display: flex; justify-content: flex-end; border-top: 1px solid #eee; gap: 10px;';
+    //     const modalFooter = document.createElement('div');
+    //     modalFooter.style.cssText = 'padding: 15px; display: flex; justify-content: flex-end; border-top: 1px solid #eee; gap: 10px;';
 
-        modalContent.appendChild(modalBody);
-        modalContent.appendChild(modalFooter);
-        modalBackdrop.appendChild(modalContent);
-        document.body.appendChild(modalBackdrop);
+    //     modalContent.appendChild(modalBody);
+    //     modalContent.appendChild(modalFooter);
+    //     modalBackdrop.appendChild(modalContent);
+    //     document.body.appendChild(modalBackdrop);
 
-        const close = () => modalBackdrop.remove();
+    //     const close = () => modalBackdrop.remove();
 
-        if (isConfirm) {
-            const confirmBtn = document.createElement('button');
-            confirmBtn.textContent = 'Confirm';
-            confirmBtn.className = 'button-primary';
-            confirmBtn.onclick = () => {
-                if (onConfirm) onConfirm();
-                close();
-            };
-            modalFooter.appendChild(confirmBtn);
+    //     if (isConfirm) {
+    //         const confirmBtn = document.createElement('button');
+    //         confirmBtn.textContent = 'Confirm';
+    //         confirmBtn.className = 'button-primary';
+    //         confirmBtn.onclick = () => {
+    //             if (onConfirm) onConfirm();
+    //             close();
+    //         };
+    //         modalFooter.appendChild(confirmBtn);
 
-            const cancelBtn = document.createElement('button');
-            cancelBtn.textContent = 'Cancel';
-            cancelBtn.className = 'button-secondary';
-            cancelBtn.onclick = close;
-            modalFooter.appendChild(cancelBtn);
-        } else {
-            const okBtn = document.createElement('button');
-            okBtn.textContent = 'OK';
-            okBtn.className = 'button-primary';
-            okBtn.onclick = close;
-            modalFooter.appendChild(okBtn);
-        }
-    }
+    //         const cancelBtn = document.createElement('button');
+    //         cancelBtn.textContent = 'Cancel';
+    //         cancelBtn.className = 'button-secondary';
+    //         cancelBtn.onclick = close;
+    //         modalFooter.appendChild(cancelBtn);
+    //     } else {
+    //         const okBtn = document.createElement('button');
+    //         okBtn.textContent = 'OK';
+    //         okBtn.className = 'button-primary';
+    //         okBtn.onclick = close;
+    //         modalFooter.appendChild(okBtn);
+    //     }
+    // }
 
     async function fetchAndDisplayInventory() {
         console.log("Fetching device inventory...");

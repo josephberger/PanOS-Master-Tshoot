@@ -23,7 +23,7 @@
                 <hr class="section-divider">
                 <label>FIB Trace on Map</label>
                 <form id="map-trace-form">
-                    <input type="text" id="map-src-ip-input" name="src_ip" placeholder="Source IP (e.g., 192.168.1.5)" required>
+                    <input type="text" id="map-src-ip-input" name="src_ip" placeholder="Source IP (e.192.168.1.5)" required>
                     <input type="text" id="map-dst-ip-input" name="dst_ip" placeholder="Destination IP (e.g., 8.8.8.8)" required>
                     <button type="submit" class="button-secondary">Trace Path</button>
                 </form>
@@ -36,16 +36,27 @@
                 </div>
 
                 </div>
-            <div id="inspector-panel" style="display: none;">
-                <div class="modal-header">
-                    <h4 id="inspector-title"></h4>
-                    <button id="inspector-close-btn">&times;</button>
-                </div>
-                <div id="inspector-content"></div>
-            </div>
+            {# REMOVED: Old inline inspector-panel #}
+            {# <div id="inspector-panel" style="display: none;"> #}
+            {#     <div class="modal-header"> #}
+            {#         <h4 id="inspector-title"></h4> #}
+            {#         <button id="inspector-close-btn">&times;</button> #}
+            {#     </div> #}
+            {#     <div id="inspector-content"></div> #}
+            {# </div> #}
         </div>
     </div>
     <div id="visualization"></div>
+
+    <div id="inspector-panel">
+        <div class="modal-header">
+            <h4 id="inspector-title"></h4>
+            <button id="inspector-close-btn">&times;</button>
+        </div>
+        <div id="inspector-content"></div>
+    </div>
+
+    <div id="inspector-overlay" class="hidden"></div>
 </div>
 
 <div id="task-log-modal" class="modal-backdrop" style="display: none;">
@@ -63,5 +74,6 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='scripts/global.js') }}"></script> {# Ensure global.js is loaded first #}
 <script src="{{ url_for('static', filename='scripts/mapper-script.js') }}"></script>
 {% endblock %}

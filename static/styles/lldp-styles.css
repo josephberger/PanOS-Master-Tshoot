@@ -37,7 +37,7 @@ svg:active {
     overflow-y: auto;
     word-wrap: break-word;
     z-index: 20;
-    box-sizing: border-box; 
+    box-sizing: border-box;
     pointer-events: none; /* Default: cannot click through it */
 }
 
@@ -92,6 +92,11 @@ svg:active {
     fill: #34495e; /* Darker grey for text */
     font-size: 12px;
     font-weight: bold; /* Make neighbor hostname bold */
+}
+
+html.dark-mode #inspector-panel .connection-group-title {
+    color: var(--text-color-dark-mode, #e2e8f0); /* Ensures the text turns white/light in dark mode */
+    /* You already have other styles for this selector, just ensure this one is present */
 }
 
 /* ------------------------------------------- */
@@ -212,4 +217,245 @@ html.dark-mode .highlight .interface-dot {
 
 html.dark-mode .locked-node rect {
     stroke: #f39c12 !important; /* Brighter orange for dark mode */
+}
+
+/* =================================================================== */
+/* INSPECTOR PANEL STYLES (ENHANCED & SLIDE-IN)                        */
+/* =================================================================== */
+
+/* Inspector Panel - now fixed position, slides from right */
+#inspector-panel {
+    position: fixed; /* Fixed relative to viewport */
+    top: var(--header-height, 60px); /* Adjust this to the height of your main title bar */
+    right: -450px; /* Initially off-screen to the right */
+    width: 420px; /* Desired width when open */
+    height: calc(100vh - var(--header-height, 60px)); /* Fill remaining height below header */
+    background: var(--sidebar-bg-color, #fff);
+    box-shadow: -4px 0 10px rgba(0, 0, 0, 0.2); /* Shadow on the left side */
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+    z-index: 100; /* Ensure it's above everything else except possibly fixed top nav */
+    transition: right 0.3s ease-in-out; /* Smooth slide transition */
+    padding: 0;
+}
+
+/* Class to apply when the inspector is open */
+#inspector-panel.inspector-open {
+    right: 0; /* Slide into view */
+}
+
+#inspector-panel .modal-header {
+    padding: 15px 20px;
+    border-bottom: 1px solid var(--border-color-light, #eee);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+#inspector-panel #inspector-title {
+    margin: 0;
+    font-size: 1.1em;
+    color: var(--text-color-dark, #2c3e50);
+    /* These rules are already in place from your previous CSS */
+    display: flex;
+    align-items: center;
+}
+
+#inspector-panel #inspector-close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    padding: 0;
+    color: var(--text-color-medium, #888);
+    cursor: pointer;
+    transition: color 0.2s ease;
+}
+
+#inspector-panel #inspector-close-btn:hover {
+    color: var(--link-color-hover, #3498db);
+}
+
+#inspector-panel #inspector-content {
+    overflow-y: auto;
+    padding: 15px 20px;
+    flex-grow: 1;
+    font-size: 0.95em;
+    color: var(--text-color-dark, #333);
+}
+
+#inspector-panel .inspector-details-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+#inspector-panel .inspector-details-list li {
+    padding: 4px 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+#inspector-panel .detail-label {
+    font-weight: 500;
+    color: var(--text-color-medium, #555);
+    flex-shrink: 0;
+    margin-right: 15px;
+    white-space: nowrap;
+}
+
+#inspector-panel .detail-value {
+    color: var(--text-color-dark, #333);
+    text-align: right;
+    flex-grow: 1;
+    word-break: break-all;
+}
+
+#inspector-panel h5 {
+    font-size: 1em;
+    margin: 20px 0 10px 0;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border-color-light, #eee);
+    color: var(--text-color-dark, #2c3e50);
+}
+
+/* Table styles for connections */
+#inspector-panel table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+    font-size: 0.9em;
+}
+
+#inspector-panel table th,
+#inspector-panel table td {
+    padding: 8px 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color-light, #eee);
+}
+
+#inspector-panel table th {
+    background-color: var(--table-header-bg, #f8f8f8);
+    font-weight: 600;
+    color: var(--text-color-dark, #2c3e50);
+    white-space: nowrap;
+}
+
+#inspector-panel table tbody tr:nth-child(even) {
+    background-color: var(--table-row-even-bg, #f2f2f2);
+}
+
+#inspector-panel table tbody tr:hover {
+    background-color: var(--table-row-hover-bg, #e0e0e0);
+}
+
+/* Styling for grouped connection titles (e.g., "NGFW Hostname") */
+#inspector-panel .connection-group-title {
+    font-weight: bold;
+    display: block;
+    margin-top: 15px;
+    margin-bottom: 5px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid var(--border-color-light, #ddd);
+    color: var(--text-color-dark, #2c3e50);
+}
+#inspector-panel .connection-group-title:first-of-type {
+    margin-top: 0; /* No top margin for the first group */
+}
+
+/* Styling for the new device icons inside the inspector panel */
+#inspector-panel .device-icon {
+    width: 28px; /* Adjusted size for inspector panel, feel free to tweak */
+    height: 28px;
+    margin-right: 8px; /* Space between icon and text */
+    vertical-align: middle;
+    flex-shrink: 0; /* Prevents the image from shrinking */
+}
+
+/* Added for specific icon in the title bar, if device-icon is too general */
+#inspector-panel .inspector-title-icon {
+    /* No specific rules needed here if .device-icon is already handling it well */
+}
+
+/* Dark mode adjustments for inspector */
+html.dark-mode #inspector-panel {
+    background: var(--sidebar-bg-color-dark, #2d3748);
+    box-shadow: -4px 0 10px rgba(0, 0, 0, 0.4); /* Darker shadow for dark mode */
+}
+
+html.dark-mode #inspector-panel .modal-header {
+    border-bottom-color: var(--border-color-dark, #4a5568);
+}
+
+html.dark-mode #inspector-panel #inspector-title {
+    color: var(--text-color-dark-mode, #e2e8f0);
+}
+
+html.dark-mode #inspector-panel #inspector-close-btn {
+    color: var(--text-color-medium-dark-mode, #a0aec0);
+}
+
+html.dark-mode #inspector-panel #inspector-close-btn:hover {
+    color: var(--link-color-hover-dark, #63b3ed);
+}
+
+html.dark-mode #inspector-panel #inspector-content {
+    color: var(--text-color-dark-mode, #e2e8f0);
+}
+
+html.dark-mode #inspector-panel .detail-label {
+    color: var(--text-color-medium-dark-mode, #a0aec0);
+}
+
+html.dark-mode #inspector-panel .detail-value {
+    color: var(--text-color-dark-mode, #e2e8f0);
+}
+
+html.dark-mode #inspector-panel h5 {
+    border-bottom-color: var(--border-color-dark, #4a5568);
+    color: var(--text-color-dark-mode, #e2e8f0);
+}
+
+html.dark-mode #inspector-panel table th {
+    background-color: var(--table-header-bg-dark, #3b4555);
+    color: var(--text-color-dark-mode, #e2e8f0);
+    border-bottom-color: var(--border-color-dark, #4a5568);
+}
+
+html.dark-mode #inspector-panel table td {
+    border-bottom-color: var(--border-color-dark, #4a5568);
+}
+
+html.dark-mode #inspector-panel table tbody tr:nth-child(even) {
+    background-color: var(--table-row-even-bg-dark, #333d4c);
+}
+
+html.dark-mode #inspector-panel table tbody tr:hover {
+    background-color: var(--table-row-hover-bg-dark, #444e5f);
+}
+
+html.dark-mode .connection-group-title {
+    border-bottom-color: var(--border-color-dark, #4a5568);
+    color: var(--text-color-dark-mode, #e2e8f0);
+}
+
+
+/* Inspector Overlay (to dim background and capture clicks) */
+#inspector-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.4); /* Semi-transparent black */
+    z-index: 99; /* Below inspector-panel, above visualization */
+    opacity: 1;
+    transition: opacity 0.3s ease-in-out;
+}
+
+#inspector-overlay.hidden {
+    opacity: 0;
+    pointer-events: none; /* Allows clicks to pass through when hidden */
 }
