@@ -9,6 +9,7 @@ from flask import Flask, jsonify, render_template, Response, request
 # Import controller exceptions, including the specific schema error
 from mastertshoot.mt_controller import MTController, MTControllerException, MTDatabaseSchemaError
 from mastertshoot.mt_builder import MTBuilder, MTBuilderException
+from mastertshoot.mt_database_manager import MTDatabaseManager, MTDatabaseManagerException 
 from config import db_uri, timeout
 
 # --- App and Component Setup ---
@@ -27,29 +28,29 @@ except MTBuilderException as e:
 # Now, initialize the controller, with a fallback to create the database if needed.
 if builder:
     try:
-        # Attempt to initialize the controller normally.
         controller = MTController(db_uri=db_uri, timeout=timeout)
         logging.info("Controller initialized successfully on existing database.")
     except MTDatabaseSchemaError:
-        # This specific error means the database file exists but is empty or missing tables.
         logging.warning("Database schema not found. Attempting to create a new database...")
         try:
-            # Use the builder to create the database schema.
             build_message = builder.build_database()
             logging.info(f"Database creation status: {build_message}")
-            
-            # Now, retry initializing the controller, which should succeed.
+
             controller = MTController(db_uri=db_uri, timeout=timeout)
             logging.info("Controller initialized successfully on newly created database.")
-            
-        except (MTBuilderException, MTControllerException) as e:
-            # If creating the DB or re-initializing the controller fails, it's a fatal error.
+
+        except (MTBuilderException, MTControllerException, MTDatabaseManagerException) as e: # Added MTDatabaseManagerException
             logging.fatal(f"FATAL: Failed to create database and initialize controller: {e}")
-            controller = None # Ensure controller is None on failure
-            
+            controller = None
+
     except MTControllerException as e:
-        # Catch other controller initialization errors (e.g., bad DB connection, permissions).
         logging.fatal(f"FATAL: Failed to initialize controller: {e}")
+        controller = None
+    except MTDatabaseManagerException as e: # New Exception Handler for db_manager errors
+        logging.fatal(f"FATAL: Database Manager error during controller initialization: {e}") # New Line
+        controller = None # New Line
+    except Exception as e:
+        logging.fatal(f"FATAL: An unexpected error occurred during controller initialization: {e}")
         controller = None
 else:
     logging.fatal("FATAL: Builder could not be initialized, cannot proceed with controller setup.")
